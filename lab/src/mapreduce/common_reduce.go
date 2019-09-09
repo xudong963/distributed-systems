@@ -62,7 +62,7 @@ func doReduce(
 		for {
 			err := decode.Decode(&kv)
 			if err != nil{
-				break;
+				break
 			}
 			distMap[kv.Key] = append(distMap[kv.Key], kv.Value)
 		}
