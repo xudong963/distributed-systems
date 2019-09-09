@@ -50,35 +50,41 @@ func doReduce(
 	//
 	// Your code here (Part I).
 	//
-	var keyValues []KeyValue
-	for i:=1; i<=nMap; i++ {
+	var kv KeyValue
+	var distMap = map[string][]string{}
+	for i:=0; i<nMap; i++ {
 		filename := reduceName(jobName, i, reduceTask)
 		file, err := os.Open(filename)
 		if err != nil {
 			panic(err)
 		}
-		err1 := json.NewDecoder(file).Decode(&keyValues)
-		if err1 != nil {
-			panic(err1)
+		decode := json.NewDecoder(file)
+		for {
+			err := decode.Decode(&kv)
+			if err != nil{
+				break;
+			}
+			distMap[kv.Key] = append(distMap[kv.Key], kv.Value)
+		}
+		err = file.Close()
+		if err!=nil{
+			panic(err)
 		}
 	}
-	var keys []string
-	for _, kv := range keyValues {
-		keys = append(keys, kv.Key)
+
+	keys := make([]string, 0, len(distMap))
+	for key := range distMap {
+		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	var distMap = map[string][]string{}
-	for _, keyValue := range keyValues{
-		distMap[keyValue.Value] = append(distMap[keyValue.Key], keyValue.Value)
-	}
 
-	outfile, err := os.OpenFile("outFile", os.O_WRONLY|os.O_CREATE, 0666)
+	outfile, err := os.Create(outFile)
 	if err!=nil {
 		panic(err)
 	}
 	enc := json.NewEncoder(outfile)
-	for key := range distMap{
-		err = enc.Encode(reduceF(key, distMap[key]))
+	for _, key := range keys{
+		err = enc.Encode(KeyValue{key, reduceF(key, distMap[key])})
 		if err != nil{
 			panic(err)
 		}
