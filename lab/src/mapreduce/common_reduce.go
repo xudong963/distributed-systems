@@ -6,12 +6,6 @@ import (
 	"sort"
 )
 
-type distinctKeyValue struct {
-	distinctKey string
-	values  []string
-}
-
-
 func doReduce(
 	jobName string, // the name of the whole MapReduce job
 	reduceTask int, // which reduce task this is
@@ -73,7 +67,24 @@ func doReduce(
 		keys = append(keys, kv.Key)
 	}
 	sort.Strings(keys)
-	var distinctKey []distinctKeyValue
-	len := len(keys)
+	var distMap = map[string][]string{}
+	for _, keyValue := range keyValues{
+		distMap[keyValue.Value] = append(distMap[keyValue.Key], keyValue.Value)
+	}
 
+	outfile, err := os.OpenFile("outFile", os.O_WRONLY|os.O_CREATE, 0666)
+	if err!=nil {
+		panic(err)
+	}
+	enc := json.NewEncoder(outfile)
+	for key := range distMap{
+		err = enc.Encode(reduceF(key, distMap[key]))
+		if err != nil{
+			panic(err)
+		}
+	}
+	err = outfile.Close()
+	if err!=nil{
+		panic(err)
+	}
 }
