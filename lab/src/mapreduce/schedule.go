@@ -2,7 +2,6 @@ package mapreduce
 
 import (
 	"fmt"
-	"sync"
 )
 
 //
@@ -58,7 +57,7 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 			taskChan <- i
 		}
 	}()
-/*
+
 	finish := make(chan int)
 	finishTime := 0
 
@@ -87,9 +86,10 @@ loop:
 			}
 		}
 	}
-*/
 
 
+/*
+  //can't solve the situation of worker fault
 	var wg sync.WaitGroup
 	wg.Add(ntasks)
 	for i := 0; i<ntasks; i++ {
@@ -105,10 +105,13 @@ loop:
 			}else {
 				//failure, put task to taskChan, retry
 				taskChan <- task
+				go func() { ntasks++ }()
 			}
 		}()
 	}
 	wg.Wait()
+
+ */
 
 	fmt.Printf("Schedule: %v done\n", phase)
 }
