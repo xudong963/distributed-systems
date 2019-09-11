@@ -1,0 +1,24 @@
+2019/09/11 19:27:08 rpc.Register: method "CleanupFiles" has 1 input parameters; needs exactly three
+2019/09/11 19:27:08 rpc.Register: method "Lock" has 1 input parameters; needs exactly three
+2019/09/11 19:27:08 rpc.Register: method "Unlock" has 1 input parameters; needs exactly three
+2019/09/11 19:27:08 rpc.Register: method "Wait" has 1 input parameters; needs exactly three
+/var/tmp/824-1000/mr2775-master: Starting Map/Reduce task test
+Schedule: 20 mapPhase tasks (10 I/Os)
+RunWorker /var/tmp/824-1000/mr2775-worker1
+2019/09/11 19:27:08 rpc.Register: method "Lock" has 1 input parameters; needs exactly three
+RunWorker /var/tmp/824-1000/mr2775-worker0
+2019/09/11 19:27:08 rpc.Register: method "Lock" has 1 input parameters; needs exactly three
+Schedule: mapPhase done
+2019/09/11 19:27:08 rpc.Register: method "Unlock" has 1 input parameters; needs exactly three
+2019/09/11 19:27:08 rpc.Register: method "Unlock" has 1 input parameters; needs exactly three
+Schedule: 10 reducePhase tasks (20 I/Os)
+Schedule: reducePhase done
+Shutdown: registration server
+Register: worker /var/tmp/824-1000/mr2775-worker0
+Register: worker /var/tmp/824-1000/mr2775-worker1
+RegistrationServer: accept error accept unix /var/tmp/824-1000/mr2775-master: use of closed network connectionRegistrationServer: done
+cleanupRegistration: done
+Merge phaseMerge: read mrtmp.test-res-0
+2019/09/11 19:27:08 Merge: open mrtmp.test-res-0: no such file or directory
+exit status 1
+FAIL	_/mnt/d/githubPro/distributed-systems/lab/src/mapreduce	0.315s

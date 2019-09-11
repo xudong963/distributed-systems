@@ -1,6 +1,9 @@
 package mapreduce
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 //
 // schedule() starts and waits for all tasks in the given phase (mapPhase
@@ -30,5 +33,82 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	//
 	// Your code here (Part III, Part IV).
 	//
+
+	//get Worker.DoTask RPC
+	makeDoTaskArgs := func(task int, phase jobPhase) DoTaskArgs {
+
+		var doTaskArgs DoTaskArgs
+		if phase == mapPhase {
+			doTaskArgs.File = mapFiles[task]
+		}
+		doTaskArgs.JobName = jobName
+
+		// NumOtherPhase is the total number of tasks in other phase; mappers
+		// need this to compute the number of output bins, and reducers needs
+		// this to know how many input files to collect.
+		doTaskArgs.NumOtherPhase = n_other
+		doTaskArgs.Phase = phase
+		doTaskArgs.TaskNumber = task
+		return doTaskArgs
+	}
+
+	var taskChan = make(chan int)
+	go func() {
+		for i:=0; i<ntasks; i++ {
+			taskChan <- i
+		}
+	}()
+/*
+	finish := make(chan int)
+	finishTime := 0
+
+loop:
+	for {
+		select {
+		case task := <- taskChan:
+			go func() {
+				worker := <- registerChan
+				//send an PRC to a worker
+				result := call(worker,"Worker.DoTask", makeDoTaskArgs(task, phase), nil)
+				if result {
+					//schedule successfully, put worker to registerChan for other task
+					finish <- 1
+					go func() { registerChan <- worker }()
+				}else {
+					//failure, put task to taskChan, retry
+					taskChan <- task
+				}
+			}()
+		case <- finish:
+			finishTime += 1
+		default:
+			if finishTime == ntasks {
+				break loop
+			}
+		}
+	}
+*/
+
+
+	var wg sync.WaitGroup
+	wg.Add(ntasks)
+	for i := 0; i<ntasks; i++ {
+		go func() {
+			task := <- taskChan
+			worker := <- registerChan
+			//send an PRC to a worker
+			result := call(worker,"Worker.DoTask", makeDoTaskArgs(task, phase), nil)
+			if result {
+				//schedule successfully, put worker to registerChan for other task
+				wg.Done()
+				go func() { registerChan <- worker }()
+			}else {
+				//failure, put task to taskChan, retry
+				taskChan <- task
+			}
+		}()
+	}
+	wg.Wait()
+
 	fmt.Printf("Schedule: %v done\n", phase)
 }
