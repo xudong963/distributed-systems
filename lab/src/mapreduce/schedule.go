@@ -61,7 +61,7 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	finish := make(chan int)
 	finishTime := 0
 
-loop:
+L:
 	for {
 		select {
 		case task := <- taskChan:
@@ -82,7 +82,7 @@ loop:
 			finishTime += 1
 		default:
 			if finishTime == ntasks {
-				break loop
+				break L
 			}
 		}
 	}
