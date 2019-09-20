@@ -133,8 +133,14 @@ func (rf *Raft) readPersist(data []byte) {
 // example RequestVote RPC arguments structure.
 // field names must start with capital letters!
 //
+//invoked by candidates to gather votes
+
 type RequestVoteArgs struct {
 	// Your code	 here (2A, 2B).
+	term int                           // candidate's term
+	candidateId int                    // candidate requesting vote
+	lastLogIndex int                   // index of candidate's last log entry
+	lastLogTerm int                    // term of candidate's last log entry
 }
 
 //
@@ -143,6 +149,8 @@ type RequestVoteArgs struct {
 //
 type RequestVoteReply struct {
 	// Your code here (2A).
+	term int                           // currentTerm, for candidate to update itself
+	voteGranted bool                   // true means candidate received vote
 }
 
 //
