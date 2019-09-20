@@ -1,10 +1,5 @@
 package raft
 
-//
-// this is an outline of the API that raft must expose to
-// the service (or tester). see comments below for
-// each of these functions for more details.
-//
 // rf = Make(...)
 //   create a new Raft server.
 // rf.Start(command interface{}) (index, term, isleader)
@@ -17,13 +12,17 @@ package raft
 //   in the same server.
 //
 
-import "sync"
-import "labrpc"
+import (
+	"labrpc"
+	"sync"
+)
 
-// import "bytes"
-// import "labgob"
 
-
+// define a struct to hold information about each log entry
+type LogEntry struct {
+	Term int
+	Command interface{}      //a log contains a series of commands, which its state machine executes in order
+}
 
 //
 // as each Raft peer becomes aware that successive log entries are
@@ -41,7 +40,13 @@ type ApplyMsg struct {
 	Command      interface{}
 	CommandIndex int
 }
-
+//define a enum contains three states of server
+type State int
+const (
+	Follower State = iota
+	Candidate
+	Leader
+)
 //
 // A Go object implementing a single Raft peer.
 //
@@ -54,7 +59,19 @@ type Raft struct {
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
+	state     State
+	// persistent state on all servers
+	currentTerm int               // latest term server has seen (initialized to 0)
+	votedFor  int                 // candidateId that received vote in current term(or null if none)
+	log[]     LogEntry            // log entries. Each entry contains command for state machine and term when entry was received by leader
+	// volatile state on all servers
+	commitIndex int               // index of highest log entry known to be committed (initialized to 0)
+	lastApplied int               // index of highest log entry applied to state machine (initialized to 0)
 
+	// volatile state on leaders(reinitialized after elected)
+	nextIndex[] int               // for each server, index of the next log entry to send to that server(initialized to leader last log index+1)
+	matchIndex[] int              // for each server, index of highest log entry known to be replicated on server (initialized to 0)
+	
 }
 
 // return currentTerm and whether this server
@@ -115,7 +132,7 @@ func (rf *Raft) readPersist(data []byte) {
 // field names must start with capital letters!
 //
 type RequestVoteArgs struct {
-	// Your data here (2A, 2B).
+	// Your code	 here (2A, 2B).
 }
 
 //
@@ -123,7 +140,7 @@ type RequestVoteArgs struct {
 // field names must start with capital letters!
 //
 type RequestVoteReply struct {
-	// Your data here (2A).
+	// Your code here (2A).
 }
 
 //
