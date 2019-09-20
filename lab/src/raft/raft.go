@@ -159,7 +159,21 @@ type RequestVoteReply struct {
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 }
+// third step: define the AppendEntries RCP struct
+// invoked by leader to replicate log entries; also used as heartbeat
+type AppendEntriesArg struct {
+	term int                          // leader's term
+	leaderId int                      // because in raft only leader can link to client, so follower can redirect client by leader id
+	prevLogIndex int                  // index of log entry before new ones
+	prevLogTerm  int                  // term of prevLogIndex entry
+	entries[]    LogEntry             // log entries to store (empty for heartbeat)
+	leaderCommit int                  // leader's commitIndex
+}
 
+type AppendEntriesReply struct {
+	term int                          // currentTerm, for leader to update itself
+	success bool                      // true if follower contained entry matching prevLogIndex and prevLogTerm
+}
 //
 // example code to send a RequestVote RPC to a server.
 // server is the index of the target server in rf.peers[].
