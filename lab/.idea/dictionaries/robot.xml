@@ -2,6 +2,7 @@
   <dictionary name="robot">
     <words>
       <w>labgob</w>
+      <w>persister</w>
     </words>
   </dictionary>
 </component>

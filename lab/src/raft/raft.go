@@ -14,7 +14,10 @@ package raft
 
 import (
 	"labrpc"
+	"math/rand"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 
@@ -41,6 +44,7 @@ type ApplyMsg struct {
 	CommandIndex int
 }
 //define a enum contains three states of server
+const UNKNOWN = -1
 type State int
 const (
 	Follower State = iota
@@ -69,9 +73,22 @@ type Raft struct {
 	lastApplied int               // index of highest log entry applied to state machine (initialized to 0)
 
 	// volatile state on leaders(reinitialized after elected)
+	// used by toLeader()
 	nextIndex[] int               // for each server, index of the next log entry to send to that server(initialized to leader last log index+1)
 	matchIndex[] int              // for each server, index of highest log entry known to be replicated on server (initialized to 0)
 
+	applyCh   chan ApplyMsg
+	votedCh   chan bool
+	appendLogEntryCh chan bool
+}
+
+//to be candidate
+func (rf* Raft) toCandidate() {
+	rf.state = Candidate
+	rf.votedFor = rf.me
+	rf.currentTerm++
+	//invoke vote to be leader
+	go rf.electForLeader()
 }
 
 // return currentTerm and whether this server
@@ -125,9 +142,82 @@ func (rf *Raft) readPersist(data []byte) {
 	//   rf.yyy = yyy
 	// }
 }
+func (rf* Raft) getLastLogTerm() int {
+	index := len(rf.log) - 1
+	if index<0 {
+		return -1
+	}
+	return rf.log[index].Term
+}
+// request vote
+func (rf* Raft) electForLeader() {
+	args := RequestVoteArgs{
+		term:         rf.currentTerm,
+		candidateId:  rf.votedFor,
+		lastLogIndex: len(rf.log)-1,
+		lastLogTerm:  rf.getLastLogTerm(),
+	}
+	//initial votes 1, self votes
+	var votes int32 = 1
+	for i:=0; i<len(rf.peers); i++ {
+		// meet myself
+		if i==rf.me {
+			continue
+		}
+		go func() {
+			reply := &RequestVoteReply{}
+			response := rf.sendRequestVote(i, &args, reply)
+			if response {
+				// voteGrand
+				if reply.voteGranted {
+					// update vote using atomic
+					atomic.AddInt32(&votes, 1)
+				}
+				// if vote fails or elect leader, reset voteCh
+				// reply.Term>current term  -> to be follower
+				if reply.term > rf.currentTerm {
+					rf.toFollower(rf.currentTerm)
+					reset(rf.votedCh)
+					return
+				}
+				// success
+				if atomic.LoadInt32(&votes) > int32(len(rf.peers)/2) {
+					rf.toLeader(rf.currentTerm)
+					reset(rf.votedCh)
+					return
+				}
+			}
+		}()
+	}
+}
 
 
+func (rf* Raft) toLeader(term int) {
+	rf.state = Leader
+	rf.currentTerm = term
+	// after to be leader, something need initialize
+	rf.nextIndex = make([]int, len(rf.peers))
+	rf.matchIndex = make([]int, len(rf.peers))
+	// initialize nextIndex for each server, it should be leader's last log index plus 1, exactly len(leader.log)
+	for i:=0; i<len(rf.nextIndex); i++ {
+		rf.nextIndex[i] = len(rf.log)
+	}
+}
 
+//
+func (rf* Raft) toFollower(term int) {
+	rf.state = Follower
+	rf.votedFor = UNKNOWN
+	rf.currentTerm = term
+}
+
+func reset(voteCh chan bool)  {
+	select {
+	case <- voteCh:     // maybe true when atomic.LoadInt32(&votes) > int32(len(rf.peers)/2)
+	default:
+	}
+	voteCh <- true      // avoid deadlock in Make
+}
 
 //
 // example RequestVote RPC arguments structure.
@@ -263,10 +353,43 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here (2A, 2B, 2C).
+	rf.state = Follower
+	rf.currentTerm = 0
+	rf.commitIndex = 0
+	rf.lastApplied = 0
+	rf.log = make([]LogEntry, 0)
+	rf.matchIndex = make([]int, len(rf.peers))
+	rf.nextIndex = make([]int, len(rf.peers))
+	rf.votedFor = UNKNOWN
+
+	rf.applyCh = applyCh
+
+	rf.votedCh = make(chan bool, 1)
+	rf.appendLogEntryCh = make(chan bool, 1)
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
-
+	//modify Make() to create a background goroutine
+	go func() {
+		heartbeatTime := time.Duration(100) * time.Millisecond
+		for {
+			electionTimeout := time.Duration(rand.Intn(100)*300) * time.Millisecond
+			switch rf.state {
+			case Follower, Candidate:
+				// if receive rpc, then break select
+				select {
+				case <-rf.appendLogEntryCh:
+				case <-rf.votedCh:
+				case <-time.After(electionTimeout):
+					//become Candidate if time out
+					rf.toCandidate()
+				}
+			case Leader:
+				rf.appendLogEntry()  // leader's task is to append log entry
+				time.Sleep(heartbeatTime) // tester doesn't allow the leader send heartbeat RPCs more than ten times per second
+			}
+		}
+	}()
 	return rf
 }
