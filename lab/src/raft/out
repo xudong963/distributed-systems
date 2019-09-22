@@ -1,0 +1,7 @@
+Test (2A): initial election ...
+--- FAIL: TestInitialElection2A (5.14s)
+    config.go:327: expected one leader, got none
+Test (2A): election after network failure ...
+2019/09/22 17:27:37 labrpc.Service.dispatch(): unknown method AppendEntriesArg in Raft.AppendEntriesArg; expecting one of [AppendEntries RequestVote]
+exit status 1
+FAIL	raft	9.043s
