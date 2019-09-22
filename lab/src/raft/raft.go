@@ -13,7 +13,7 @@ package raft
 //
 
 import (
-	"fmt"
+	//"fmt"
 	"labrpc"
 	"math/rand"
 	"sync"
@@ -81,21 +81,20 @@ type Raft struct {
 	applyCh   chan ApplyMsg
 	votedCh   chan bool
 	appendLogEntryCh chan bool
+	killCh    chan bool
 }
 
 
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
-
 	var term int
-	var isleader bool
-	// Your code here (2A).
+	var isLeader bool
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	term = rf.currentTerm
-	isleader = rf.state==Leader
-	return term, isleader
+	isLeader = rf.state==Leader
+	return term, isLeader
 }
 
 
@@ -153,7 +152,6 @@ func (rf* Raft) toLeader() {
 		return
 	}
 	rf.state = Leader
-	// ???? Term
 	// after to be leader, something need initialize
 	rf.nextIndex = make([]int, len(rf.peers))
 	rf.matchIndex = make([]int, len(rf.peers))
@@ -184,13 +182,13 @@ func (rf* Raft) getLastLogIndex() int {
 // request vote
 func (rf* Raft) electForLeader() {
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
 	args := RequestVoteArgs{
 		Term:         rf.currentTerm,
 		CandidateId:  rf.votedFor,
 		LastLogIndex: rf.getLastLogIndex(),
 		LastLogTerm:  rf.getLastLogTerm(),
 	}
+	rf.mu.Unlock()
 	//initial votes 1, self votes
 	var votes int32 = 1
 	for i:=0; i<len(rf.peers); i++ {
@@ -210,7 +208,7 @@ func (rf* Raft) electForLeader() {
 					rf.toFollower(reply.Term)
 					return
 				}
-				if rf.state != Candidate || rf.currentTerm != args.Term	{
+				if rf.state != Candidate{
 					return
 				}
 				// voteGrand
@@ -272,7 +270,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	defer rf.mu.Unlock()
 	if rf.currentTerm < args.Term {
 		rf.toFollower(args.Term)
-		//reset(rf.votedCh)
 	}
 	reply.VoteGranted = false
 	reply.Term = rf.currentTerm
@@ -285,7 +282,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}else {
 		reply.VoteGranted = true
 		rf.votedFor = args.CandidateId
-		rf.currentTerm = args.Term
+		rf.state = Follower
 		reset(rf.votedCh)
 	}
 }
@@ -338,26 +335,9 @@ func (rf* Raft) appendLogEntries() {
 		if i == rf.me {
 			continue
 		}
-
-		go func(index int) {
-			reply := &AppendEntriesReply{}
-			rf.mu.Lock()
-			defer rf.mu.Unlock()
-			args := AppendEntriesArgs{
-				Term:         rf.currentTerm,
-				LeaderId:     rf.me,
-				PrevLogIndex: rf.nextIndex[index]-1,
-				PrevLogTerm:  rf.getPrevLogTerm(index),
-				Entries:      rf.log,
-				LeaderCommit: rf.commitIndex,
-			}
-
-			response := rf.sendAppendEntries(index, &args, reply)
-			if !response {
-				return
-			}
-		}(i)
-
+		go func() {
+			
+		}()
 	}
 }
 
@@ -469,18 +449,23 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	rf.votedCh = make(chan bool, 1)
 	rf.appendLogEntryCh = make(chan bool, 1)
-
+	rf.killCh  = make(chan bool, 1)
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 	heartbeatTime := time.Duration(100) * time.Millisecond
 	//modify Make() to create a background goroutine
 	go func() {
 		for {
-			electionTimeout := time.Duration(rand.Intn(200) + 300) * time.Millisecond   // 错误的点
+			electionTimeout := time.Duration(rand.Intn(100) + 300) * time.Millisecond   // 错误的点
 			rf.mu.Lock()
 			state := rf.state
 			rf.mu.Unlock()
-			fmt.Println(state)
+			select {
+			case <-rf.killCh:
+				return
+			default:
+			}
+			//fmt.Println(state)
 			switch state {
 			case Follower, Candidate:
 				// if receive rpc, then break select
