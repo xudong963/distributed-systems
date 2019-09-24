@@ -148,6 +148,7 @@ func (rf* Raft) toCandidate() {
 }
 
 func (rf* Raft) toLeader() {
+	// only candidate can be leader
 	if rf.state != Candidate {
 		return
 	}
@@ -155,18 +156,20 @@ func (rf* Raft) toLeader() {
 	// after to be leader, something need initialize
 	rf.nextIndex = make([]int, len(rf.peers))
 	rf.matchIndex = make([]int, len(rf.peers))
-	// initialize nextIndex for each server, it should be leader's last log index plus 1, exactly len(leader.log)
-
+	// initialize nextIndex for each server, it should be leader's last log index plus 1
 	for i:=0; i<len(rf.nextIndex); i++ {
 		rf.nextIndex[i] = rf.getLastLogIndex()+1
 	}
 }
-
-//
+// similar as Candidate
 func (rf* Raft) toFollower(term int) {
 	rf.state = Follower
 	rf.votedFor = UNKNOWN
 	rf.currentTerm = term
+}
+
+func (rf* Raft) getLastLogIndex() int {
+	return len(rf.log)-1
 }
 
 func (rf* Raft) getLastLogTerm() int {
@@ -175,64 +178,6 @@ func (rf* Raft) getLastLogTerm() int {
 		return -1
 	}
 	return rf.log[index].Term
-}
-func (rf* Raft) getLastLogIndex() int {
-	return len(rf.log)-1
-}
-// request vote
-func (rf* Raft) electForLeader() {
-	rf.mu.Lock()
-	args := RequestVoteArgs{
-		Term:         rf.currentTerm,
-		CandidateId:  rf.votedFor,
-		LastLogIndex: rf.getLastLogIndex(),
-		LastLogTerm:  rf.getLastLogTerm(),
-	}
-	rf.mu.Unlock()
-	//initial votes 1, self votes
-	var votes int32 = 1
-	for i:=0; i<len(rf.peers); i++ {
-		// meet myself
-		if i==rf.me {
-			continue
-		}
-		go func(index int) {
-			reply := &RequestVoteReply{}
-			response := rf.sendRequestVote(index, &args, reply)
-			if response {
-				rf.mu.Lock()
-				defer rf.mu.Unlock()
-				// if vote fails or elect leader, reset voteCh
-				// reply.Term>current term  -> to be follower
-				if reply.Term > rf.currentTerm {
-					rf.toFollower(reply.Term)
-					return
-				}
-				if rf.state != Candidate{
-					return
-				}
-				// voteGrand
-				if reply.VoteGranted {
-					// update vote using atomic
-					atomic.AddInt32(&votes, 1)
-				}
-				// success
-				if atomic.LoadInt32(&votes) > int32(len(rf.peers)/2) {
-					rf.toLeader()
-					rf.appendLogEntries()
-					reset(rf.votedCh)
-				}
-			}
-		}(i)
-	}
-}
-
-func reset(voteCh chan bool)  {
-	select {
-	case <- voteCh:     // maybe true when atomic.LoadInt32(&votes) > int32(len(rf.peers)/2)
-	default:
-	}
-	voteCh <- true      // avoid deadlock in Make
 }
 
 //
@@ -259,6 +204,61 @@ type RequestVoteReply struct {
 	VoteGranted bool                   // true means candidate received vote
 }
 
+// request vote
+func (rf* Raft) electForLeader() {
+	rf.mu.Lock()
+	args := RequestVoteArgs{
+		Term:         rf.currentTerm,
+		CandidateId:  rf.votedFor,
+		LastLogIndex: rf.getLastLogIndex(),
+		LastLogTerm:  rf.getLastLogTerm(),
+	}
+	rf.mu.Unlock()
+	//initial votes 1, self votes
+	var votes int32 = 1
+	for i:=0; i<len(rf.peers); i++ {
+		// meet myself
+		if i==rf.me {
+			continue
+		}
+		go func(index int) {
+			reply := &RequestVoteReply{}
+			response := rf.sendRequestVote(index, &args, reply)
+			if response {
+				rf.mu.Lock()
+				defer rf.mu.Unlock()
+				// if vote fails or elect leader, reset voteCh
+				// reply.Term>current term  -> to be follower
+				if reply.Term > rf.currentTerm {
+					// use reply.Term to update it's term
+					rf.toFollower(reply.Term)
+					return
+				}
+				// get vote
+				if reply.VoteGranted {
+					// update vote using atomic
+					atomic.AddInt32(&votes, 1)
+					// is successful?
+					if atomic.LoadInt32(&votes) > int32(len(rf.peers)/2) {
+						rf.toLeader()
+						//start to send heartbeat
+						rf.appendLogEntries()
+						reset(rf.votedCh)
+					}
+				}
+			}
+		}(i)
+	}
+}
+
+func reset(ch chan bool)  {
+	select {
+	case <- ch:
+	default:
+	}
+	ch <- true      // avoid deadlock in Make
+}
+
 //
 // example RequestVote RPC handler.
 //
@@ -271,16 +271,22 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if rf.currentTerm < args.Term {
 		rf.toFollower(args.Term)
 	}
+	// initialize RequestVoteReply struct
 	reply.VoteGranted = false
 	reply.Term = rf.currentTerm
 	// 5.1 5.2 5.4 in RequestVote PRC
 	// see paper figure2
-	if args.Term < rf.currentTerm || (rf.votedFor != UNKNOWN && rf.votedFor != args.CandidateId) {
+	if args.Term < rf.currentTerm {
+		// Reply false if term < currentTerm
+		return
+	}
+	// if votedFor is null or candidateId, and candidate's log is at least as up-to-date as receiver's log, grant vote
+	if rf.votedFor == UNKNOWN || rf.votedFor == args.CandidateId &&
+		(args.LastLogTerm>rf.getLastLogTerm() ||
+			(args.LastLogTerm==rf.getLastLogTerm() && args.LastLogIndex >= rf.getLastLogIndex())) {
 
-	}else if args.LastLogTerm<rf.getLastLogTerm() || (args.LastLogTerm==rf.getLastLogTerm() && args.LastLogIndex < rf.getLastLogIndex()){
-
-	}else {
 		reply.VoteGranted = true
+		// the case: votedFor is null
 		rf.votedFor = args.CandidateId
 		rf.state = Follower
 		reset(rf.votedCh)
@@ -294,7 +300,7 @@ type AppendEntriesArgs struct {
 	PrevLogIndex int                  // index of log entry before new ones
 	PrevLogTerm  int                  // term of prevLogIndex entry
 	Entries      []LogEntry           // log entries to store (empty for heartbeat)
-	LeaderCommit int                  // leader's commitIndex
+	LeaderCommit int                  // leader already committed log's index
 }
 
 type AppendEntriesReply struct {
@@ -303,7 +309,7 @@ type AppendEntriesReply struct {
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
-	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)   // "Raft.AppendEntries" is fixed
 	return ok
 }
 
@@ -317,14 +323,18 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if rf.currentTerm < args.Term {
 		rf.toFollower(args.Term)
 	}
-	reset(rf.appendLogEntryCh)
+	// initialize AppendEntriesReply struct
 	reply.Success = false
 	reply.Term = rf.currentTerm
-
-
+	// reply false if term < currentTerm
 	if args.Term < rf.currentTerm {
 		return
 	}
+	// reply false if log doesn't contain an entry at prevLogIndex whose term matches prevLogTerm
+	if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+		return
+	}
+
 	reply.Success = true
 }
 
@@ -341,13 +351,6 @@ func (rf* Raft) appendLogEntries() {
 	}
 }
 
-func (rf* Raft) getPrevLogTerm(i int) int {
-	prevLogIndex := rf.nextIndex[i]-1
-	if prevLogIndex < 0 {
-		return -1
-	}
-	return rf.log[prevLogIndex].Term
-}
 //
 // example code to send a RequestVote RPC to a server.
 // server is the index of the target server in rf.peers[].
