@@ -13,7 +13,7 @@ package raft
 //
 
 import (
-	//"fmt"
+	"fmt"
 	"labrpc"
 	"math/rand"
 	"sync"
@@ -82,6 +82,10 @@ type Raft struct {
 	votedCh   chan bool
 	appendLogEntryCh chan bool
 	killCh    chan bool
+
+	// snapShot
+	lastIncludedIndex int        //
+	lastIncludedTerm  int        //
 }
 
 
@@ -306,6 +310,8 @@ type AppendEntriesArgs struct {
 type AppendEntriesReply struct {
 	Term int                          // currentTerm, for leader to update itself
 	Success bool                      // true if follower contained entry matching prevLogIndex and prevLogTerm
+	ConflictIndex int                 //
+	ConflictTerm  int
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
@@ -326,29 +332,107 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// initialize AppendEntriesReply struct
 	reply.Success = false
 	reply.Term = rf.currentTerm
+	reply.ConflictIndex = -1
 	// reply false if term < currentTerm
 	if args.Term < rf.currentTerm {
 		return
 	}
 	// reply false if log doesn't contain an entry at prevLogIndex whose term matches prevLogTerm
 	if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+		reply.ConflictTerm = rf.log[args.PrevLogIndex].Term
+		index := args.PrevLogIndex-1
+		for rf.log[index].Term == reply.ConflictTerm {
+			index--
+		}
+		reply.ConflictIndex = index + 1
 		return
+	}
+
+	// if leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
+	if rf.commitIndex < args.LeaderCommit {
+		rf.commitIndex = min(args.LeaderCommit, len(rf.log)-1)
 	}
 
 	reply.Success = true
 }
 
+// service for last func
+func min(a int, b int) int {
+	if a>b {
+		return b
+	}else {
+		return a
+	}
+}
+
 //AppendEntries function
 func (rf* Raft) appendLogEntries() {
-
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	
 	for i:=0; i<len(rf.peers); i++ {
+
+		args := AppendEntriesArgs{
+			Term:         rf.currentTerm,
+			LeaderId:     rf.me,
+			PrevLogIndex: rf.getPrevLogIndex(i),
+			PrevLogTerm:  rf.getPrevLogTerm(i),
+			Entries:      rf.getEntries(i),
+			LeaderCommit: rf.commitIndex,
+		}
 		if i == rf.me {
 			continue
 		}
-		go func() {
-			
-		}()
+		go func(index int) {
+			reply := &AppendEntriesReply{}
+			respond := rf.sendAppendEntries(i, &args, reply)
+			if respond {
+				if rf.state != Leader {
+					return
+				}
+				if rf.currentTerm < reply.Term {
+					rf.toFollower(reply.Term)
+					return
+				}
+				if reply.Success {
+					rf.nextIndex[i] = args.PrevLogIndex+len(args.Entries) + 1
+					rf.matchIndex[i] = args.PrevLogIndex + len(args.Entries)
+					return
+				} else {
+					rf.nextIndex[index] = reply.ConflictIndex
+					if reply.ConflictIndex != -1 {
+						for j := args.PrevLogIndex; j>0; j-- {
+							if rf.log[j-1].Term == reply.ConflictTerm {
+								rf.nextIndex[index] = j
+								break
+							}
+						}
+					}
+				}
+			} else {
+				return
+			}
+		}(i)
 	}
+}
+
+// get prevLogIndex
+func (rf* Raft) getPrevLogIndex(i int) int {
+	return rf.nextIndex[i]-1
+}
+// get prevLog term
+func (rf* Raft) getPrevLogTerm(i int) int {
+	index := rf.getPrevLogIndex(i)
+	if index < 0 {
+		return -1
+	}
+	return rf.log[index].Term
+}
+// get the logEntries to append
+func (rf* Raft) getEntries(index int) []LogEntry {
+	logs := make([]LogEntry, 0)
+	logs = append(logs, rf.log[rf.nextIndex[index]:]...)
+	return logs
 }
 
 //
@@ -401,13 +485,22 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	index := -1
-	term := -1
-	isLeader := true
-
+	term := rf.currentTerm
+	isLeader := false
+	//fmt.Println(rf.state)
 	// Your code here (2B).
-
-
+	if rf.state == Leader {
+		newLogEntry := LogEntry{
+			Term:    rf.currentTerm,
+			Command: command,
+		}
+		rf.log = append(rf.log, newLogEntry)
+		index = rf.getLastLogIndex() + 1
+		isLeader = true
+	}
 	return index, term, isLeader
 }
 
@@ -468,7 +561,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				return
 			default:
 			}
-			//fmt.Println(state)
+			fmt.Println(state)
 			switch state {
 			case Follower, Candidate:
 				// if receive rpc, then break select
