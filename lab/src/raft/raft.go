@@ -13,7 +13,6 @@ package raft
 //
 
 import (
-	"fmt"
 	"labrpc"
 	"math/rand"
 	"sync"
@@ -333,11 +332,19 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	reply.Success = false
 	reply.Term = rf.currentTerm
 	reply.ConflictIndex = -1
+	reply.ConflictTerm = -1
 	// reply false if term < currentTerm
 	if args.Term < rf.currentTerm {
 		return
 	}
+
+	if len(rf.log) < args.PrevLogIndex+1 {
+		reply.ConflictIndex = len(rf.log)
+		return
+	}
 	// reply false if log doesn't contain an entry at prevLogIndex whose term matches prevLogTerm
+	//fmt.Println("len",len(rf.log))
+	//fmt.Println("prevLogIndex:", args.PrevLogIndex)
 	if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
 		reply.ConflictTerm = rf.log[args.PrevLogIndex].Term
 		index := args.PrevLogIndex-1
@@ -367,25 +374,23 @@ func min(a int, b int) int {
 
 //AppendEntries function
 func (rf* Raft) appendLogEntries() {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	
+
 	for i:=0; i<len(rf.peers); i++ {
 
-		args := AppendEntriesArgs{
-			Term:         rf.currentTerm,
-			LeaderId:     rf.me,
-			PrevLogIndex: rf.getPrevLogIndex(i),
-			PrevLogTerm:  rf.getPrevLogTerm(i),
-			Entries:      rf.getEntries(i),
-			LeaderCommit: rf.commitIndex,
-		}
 		if i == rf.me {
 			continue
 		}
 		go func(index int) {
+			args := AppendEntriesArgs{
+				Term:         rf.currentTerm,
+				LeaderId:     rf.me,
+				PrevLogIndex: rf.getPrevLogIndex(index),
+				PrevLogTerm:  rf.getPrevLogTerm(index),
+				Entries:      rf.getEntries(index),
+				LeaderCommit: rf.commitIndex,
+			}
 			reply := &AppendEntriesReply{}
-			respond := rf.sendAppendEntries(i, &args, reply)
+			respond := rf.sendAppendEntries(index, &args, reply)
 			if respond {
 				if rf.state != Leader {
 					return
@@ -395,8 +400,8 @@ func (rf* Raft) appendLogEntries() {
 					return
 				}
 				if reply.Success {
-					rf.nextIndex[i] = args.PrevLogIndex+len(args.Entries) + 1
-					rf.matchIndex[i] = args.PrevLogIndex + len(args.Entries)
+					rf.nextIndex[index] = args.PrevLogIndex+len(args.Entries) + 1
+					rf.matchIndex[index] = args.PrevLogIndex + len(args.Entries)
 					return
 				} else {
 					rf.nextIndex[index] = reply.ConflictIndex
@@ -422,6 +427,7 @@ func (rf* Raft) getPrevLogIndex(i int) int {
 }
 // get prevLog term
 func (rf* Raft) getPrevLogTerm(i int) int {
+
 	index := rf.getPrevLogIndex(i)
 	if index < 0 {
 		return -1
@@ -561,7 +567,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				return
 			default:
 			}
-			fmt.Println(state)
+			//fmt.Println(state)
 			switch state {
 			case Follower, Candidate:
 				// if receive rpc, then break select
