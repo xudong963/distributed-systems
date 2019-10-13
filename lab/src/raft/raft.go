@@ -13,6 +13,7 @@ package raft
 //
 
 import (
+	"fmt"
 	"labrpc"
 	"math/rand"
 	"sync"
@@ -368,6 +369,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if rf.currentTerm < args.Term {
 		rf.toFollower(args.Term)
 	}
+	reset(rf.appendLogEntryCh)
 	// reply false if term < currentTerm
 	if args.Term < rf.currentTerm {
 		return
@@ -377,7 +379,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		reply.ConflictIndex = len(rf.log)
 		return
 	}
-	
+
 	// reply false if log doesn't contain an entry at prevLogIndex whose term matches prevLogTerm
 	if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
 		reply.ConflictTerm = rf.log[args.PrevLogIndex].Term
@@ -388,12 +390,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		reply.ConflictIndex = index
 		return
 	}
-	for idx := range args.Entries {
-		if len(rf.log) <= args.PrevLogIndex+1+idx ||
-			rf.log[args.PrevLogIndex+1+idx].Term != args.Entries[idx].Term {
-			// unmatch log found
-			rf.log = rf.log[:args.PrevLogIndex+1+idx]
-			rf.log = append(rf.log, args.Entries[idx:]...)
+	// append any new log entries that don't exist in rf.log
+	for index := range args.Entries {
+		if len(rf.log) <= args.PrevLogIndex+1+index || rf.log[args.PrevLogIndex+1+index].Term != args.Entries[index].Term {
+			rf.log = rf.log[:args.PrevLogIndex+1+index]
+			rf.log = append(rf.log, args.Entries[index:]...)
 			break
 		}
 	}
@@ -425,92 +426,90 @@ func (rf* Raft) appendLogEntries() {
 			continue
 		}
 		go func(index int) {
-			rf.mu.Lock()
-			if rf.state != Leader {
-				rf.mu.Unlock()
-				return
-			}
-			prevLogIndex := rf.nextIndex[index]-1
-			logs := make([]LogEntry, 0)
-			logs = append(logs, rf.log[prevLogIndex+1:]...)
-
-			args := AppendEntriesArgs{
-				Term:         rf.currentTerm,
-				LeaderId:     rf.me,
-				PrevLogIndex: prevLogIndex,
-				PrevLogTerm:  rf.getPrevLogTerm(index),
-				Entries:      logs,
-				LeaderCommit: rf.commitIndex,
-			}
-			rf.mu.Unlock()
-
-			reply := &AppendEntriesReply{}
-			respond := rf.sendAppendEntries(index, &args, reply)
-			if respond {
+			for {
 				rf.mu.Lock()
-				//fmt.Println(reply.Success)
-				if reply.Success {
-					rf.matchIndex[index] = args.PrevLogIndex + len(args.Entries)
-					rf.nextIndex[index] = rf.matchIndex[index] + 1
-					//no adding return, it will cause deadLock
+				if rf.state != Leader {
+					rf.mu.Unlock()
+					return
+				}
+				prevLogIndex := rf.nextIndex[index]-1
+				logs := append(make([]LogEntry, 0), rf.log[prevLogIndex+1:]...)
 
-					for i := len(rf.log) - 1; i > rf.commitIndex; i-- {
-						count := 0
-						for _, matchIndex := range rf.matchIndex {
-							if matchIndex >= i {
-								count += 1
+				args := AppendEntriesArgs{
+					Term:         rf.currentTerm,
+					LeaderId:     rf.me,
+					PrevLogIndex: prevLogIndex,
+					PrevLogTerm:  rf.getPrevLogTerm(index),
+					Entries:      logs,
+					LeaderCommit: rf.commitIndex,
+				}
+				rf.mu.Unlock()
+
+				reply := &AppendEntriesReply{}
+				//fmt.Printf("sendAppendEntries (%v=>%v), args: %v", rf.me, index, args)
+				//fmt.Println()
+				respond := rf.sendAppendEntries(index, &args, reply)
+				//fmt.Printf("sendAppendEntries (%v=>%v), reply: %v", rf.me, index, reply)
+				//fmt.Println()
+				if respond {
+					rf.mu.Lock()
+					if reply.Success {
+						fmt.Printf("reply.Success (%v=>%v), args.PrevLogIndex:%v, len:%v", rf.me, index, args.PrevLogIndex, len(args.Entries))
+						fmt.Println()
+						rf.matchIndex[index] = args.PrevLogIndex + len(args.Entries)
+						rf.nextIndex[index] = rf.matchIndex[index] + 1
+
+						for i := len(rf.log) - 1; i > rf.commitIndex; i-- {
+							count := 0
+							for _, matchIndex := range rf.matchIndex {
+								if matchIndex >= i {
+									count += 1
+								}
+							}
+							if count > len(rf.peers)/2 && rf.log[i].Term == rf.currentTerm{
+								// most of nodes agreed on rf.logs[i]
+								rf.commitIndex = i
+								rf.apply()
+								break
 							}
 						}
-
-						if count > len(rf.peers)/2 && rf.log[i].Term == rf.currentTerm{
-							// most of nodes agreed on rf.logs[i]
-							rf.commitIndex = i
-							rf.apply()
-							break
-						}
-					}
-				} else {
-					if rf.currentTerm < reply.Term {
-						rf.toFollower(reply.Term)
-					}else {
-						rf.nextIndex[index] = reply.ConflictIndex
-						if reply.ConflictTerm != -1 {
-							for j := args.PrevLogIndex; j>0; j-- {
-								if rf.log[j-1].Term == reply.ConflictTerm {
-									rf.nextIndex[index] = j
-									break
+						rf.mu.Unlock()
+						return
+					} else {
+						if rf.currentTerm < reply.Term {
+							rf.toFollower(reply.Term)
+						}else {
+							rf.nextIndex[index] = reply.ConflictIndex
+							if reply.ConflictTerm != -1 {
+								for j := args.PrevLogIndex; j>0; j-- {
+									if rf.log[j-1].Term == reply.ConflictTerm {
+										rf.nextIndex[index] = j
+										rf.nextIndex[index] = min(len(rf.log), j)
+										break
+									}
 								}
 							}
 						}
+						rf.mu.Unlock()
 					}
 				}
-				rf.mu.Unlock()
 			}
 		}(i)
 	}
 }
 
+// if commitIndex>lastApplied, then lastApplied+1. and apply
+// log[lastApplied] to state machine
 func (rf *Raft) apply() {
-	// apply all entries between lastApplied and committed
-	// should be called after commitIndex updated
-	// rf.commitIndex = commitIndex
-
 	if rf.commitIndex > rf.lastApplied {
-		go func(start_idx int, entries []LogEntry) {
-			for idx, entry := range entries {
-				DPrintf("%v applies command %d on index %d", rf, entry.Command.(int), start_idx+idx)
-				var msg ApplyMsg
-				msg.CommandValid = true
-				msg.Command = entry.Command
-				msg.CommandIndex = start_idx + idx
-				rf.applyCh <- msg
-				// do not forget to update lastApplied index
-				// this is another goroutine, so protect it with lock
-				rf.mu.Lock()
-				rf.lastApplied = msg.CommandIndex
-				rf.mu.Unlock()
-			}
-		}(rf.lastApplied+1, rf.log[rf.lastApplied+1:rf.commitIndex+1])
+		rf.lastApplied++
+		currLog := rf.log[rf.lastApplied]
+		applyMsg := ApplyMsg{
+			CommandValid:true,
+			Command:currLog.Command,
+			CommandIndex:rf.lastApplied,
+		}
+		rf.applyCh <- applyMsg
 	}
 }
 
