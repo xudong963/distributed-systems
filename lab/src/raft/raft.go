@@ -235,17 +235,17 @@ func (rf* Raft) electForLeader() {
 					rf.toFollower(reply.Term)
 					return
 				}
-				if rf.state != Candidate { return }
+				if rf.state != Candidate || rf.currentTerm != args.Term { return }
 				// get vote
 				if reply.VoteGranted {
 					// update vote using atomic
 					atomic.AddInt32(&votes, 1)
-					// is successful?
-					if atomic.LoadInt32(&votes) > int32(len(rf.peers)/2) {
-						rf.toLeader()
-						//start to send heartbeat
-						reset(rf.votedCh)
-					}
+				}
+				if atomic.LoadInt32(&votes) > int32(len(rf.peers)/2) {
+					rf.toLeader()
+					//start to send heartbeat
+					rf.appendLogEntries()
+					reset(rf.votedCh)
 				}
 			}
 		}(i)
@@ -269,30 +269,27 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// set currentTerm = T, convert to follower
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	reply.VoteGranted = false
-	reply.Term = rf.currentTerm
 	if rf.currentTerm < args.Term {
 		rf.toFollower(args.Term)
-		reset(rf.votedCh)
 	}
+	//reset(rf.votedCh)
+	reply.VoteGranted = false
+	reply.Term = rf.currentTerm
 	// initialize RequestVoteReply struct
 	// 5.1 5.2 5.4 in RequestVote PRC
 	// see paper figure2
-	if args.Term < rf.currentTerm {
-		// Reply false if term < currentTerm
-		reply.Term = args.Term
-		return
-	}
-	// if votedFor is null or candidateId, and candidate's log is at least as up-to-date as receiver's log, grant vote
-	if rf.votedFor == UNKNOWN || rf.votedFor == args.CandidateId &&
-		(args.LastLogTerm>rf.getLastLogTerm() ||
-			(args.LastLogTerm==rf.getLastLogTerm() && args.LastLogIndex >= rf.getLastLogIndex())) {
-
-		reply.VoteGranted = true
-		// the case: votedFor is null
+	if (args.Term < rf.currentTerm) || (rf.votedFor != UNKNOWN && rf.votedFor != args.CandidateId) {
+		// Reply false if term < currentTerm (§5.1)  If votedFor is not null and not candidateId,
+	} else if args.LastLogTerm < rf.getLastLogTerm() || (args.LastLogTerm == rf.getLastLogTerm() && args.LastLogIndex < rf.getLastLogIndex()){
+		//If the logs have last entries with different terms, then the log with the later term is more up-to-date.
+		// If the logs end with the same term, then whichever log is longer is more up-to-date.
+		// Reply false if candidate’s log is at least as up-to-date as receiver’s log
+	} else {
+		//grant vote
 		rf.votedFor = args.CandidateId
+		reply.VoteGranted = true
 		rf.state = Follower
-		reset(rf.votedCh)
+		reset(rf.votedCh) //because If election timeout elapses without receiving granting vote to candidate, so wake up
 	}
 }
 
@@ -344,7 +341,6 @@ type AppendEntriesArgs struct {
 type AppendEntriesReply struct {
 	Term int                          // currentTerm, for leader to update itself
 	Success bool                      // true if follower contained entry matching prevLogIndex and prevLogTerm
-
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
@@ -359,12 +355,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// set currentTerm = T, convert to follower
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	defer reset(rf.appendLogEntryCh)
 	// initialize AppendEntriesReply struct
 	if rf.currentTerm < args.Term {
 		rf.toFollower(args.Term)
 	}
-
+	reset(rf.appendLogEntryCh)
 	reply.Success = false
 	reply.Term = rf.currentTerm
 
@@ -535,8 +530,9 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 			Command: command,
 		}
 		rf.log = append(rf.log, newLogEntry)
-		//rf.matchIndex[rf.me] = index
-		//rf.nextIndex[rf.me] = index + 1
+		rf.matchIndex[rf.me] = index
+		rf.nextIndex[rf.me] = index + 1
+		rf.appendLogEntries()
 	}
 	return index, term, isLeader
 }
@@ -589,7 +585,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	//modify Make() to create a background goroutine
 	go func() {
 		for {
-			electionTimeout := time.Duration(rand.Intn(200) + 300) * time.Millisecond
+			electionTimeout := time.Duration(rand.Intn(100) + 300) * time.Millisecond
 			rf.mu.Lock()
 			state := rf.state
 			rf.mu.Unlock()
@@ -610,6 +606,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 				time.Sleep(heartbeatTime) // tester doesn't allow the leader send heartbeat RPCs more than ten times per second
 				rf.appendLogEntries()  // leader's task is to append log entry
 			}
+			//time.Sleep(10 * time.Millisecond)
 		}
 	}()
 	return rf
