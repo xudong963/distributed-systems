@@ -23,6 +23,8 @@ import (
 )
 // log
 
+
+
 var info *log.Logger
 func init() {
 	_, err := os.OpenFile("infoFile.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 6666)
@@ -31,8 +33,6 @@ func init() {
 	}
 	info = log.New(os.Stdout, "Info: ",log.Ltime|log.Lshortfile)
 }
-
-
 
 // define a struct to hold information about each log entry
 type LogEntry struct {
@@ -125,7 +125,6 @@ func (rf *Raft) persist() {
 	// data := w.Bytes()
 	// rf.persister.SaveRaftState(data)
 }
-
 
 //
 // restore previously persisted state.
@@ -256,11 +255,11 @@ func (rf* Raft) electForLeader() {
 				if reply.VoteGranted {
 					// update vote using atomic
 					atomic.AddInt32(&votes, 1)
-				}
-				if atomic.LoadInt32(&votes) > int32(len(rf.peers)/2) {
-					rf.toLeader()
-					rf.appendLogEntries()
-					reset(rf.votedCh)
+					if atomic.LoadInt32(&votes) > int32(len(rf.peers)/2) {
+						rf.toLeader()
+						rf.appendLogEntries()
+						reset(rf.votedCh)
+					}
 				}
 			}
 		}(i)
@@ -402,12 +401,13 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-	prevLogIndexTerm := -1
+
 	if args.PrevLogIndex >=0 && args.PrevLogIndex < len(rf.log) {
-		prevLogIndexTerm = rf.log[args.PrevLogIndex].Term
+		if args.PrevLogTerm != rf.log[args.PrevLogIndex].Term {
+			return
+		}
 	}
-	if prevLogIndexTerm != args.PrevLogTerm {
-		return}
+
 
 	index := args.PrevLogIndex
 	for i:=0; i<len(args.Entries); i++ {
@@ -431,10 +431,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 /*
 	log.Printf("follower's commitIndex: %v,  leader's commitIndex: %v" ,
 		rf.commitIndex, args.LeaderCommit)
-
  */
-	//log.Printf("follower.log.len: %v, leader.log.len: %v", len(rf.log), len(args.Entries))
-
 	reply.Success = true
 }
 
@@ -477,18 +474,12 @@ func (rf* Raft) appendLogEntries() {
 				}
 				if reply.Success {
 /*
-					rf.mu.Unlock()
-					rf.mu.Lock()
-					info.Printf("rf.currentTerm: %v, follower: %v",
-						 rf.currentTerm, index )
-					rf.mu.Unlock()
-					rf.mu.Lock()
-
+   						info.Printf("rf.currentTerm: %v, follower: %v",
+						rf.currentTerm, index )
  */
-
 					rf.matchIndex[index] = args.PrevLogIndex + len(args.Entries)
 					rf.nextIndex[index] = rf.matchIndex[index] + 1
-
+					//need to understand
 					for i := len(rf.log)-1; i > rf.commitIndex; i-- {
 						count := 1
 						for server, v := range rf.matchIndex {
@@ -500,7 +491,6 @@ func (rf* Raft) appendLogEntries() {
 							}
 						}
 						if count > len(rf.peers)/2 && rf.log[i].Term==rf.currentTerm{
-							// majority
 							rf.commitIndex = i
 							rf.apply()
 							break
@@ -532,7 +522,6 @@ func (rf *Raft) apply() {
 			Command: currLog.Command,
 			CommandIndex: rf.lastApplied,
 		}
-
 		rf.applyCh <- applyMsg
 	}
 }
@@ -574,7 +563,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	index := -1
 	term := rf.currentTerm
 	isLeader := rf.state==Leader
-	//fmt.Println(rf.state)
 	// Your code here (2B).
 	if isLeader {
 		index = len(rf.log)
@@ -643,7 +631,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			rf.mu.Lock()
 			state := rf.state
 			rf.mu.Unlock()
-			//log.Printf("rf.index: %v, rf.state: %v", rf.me, state)
 			switch state {
 			case Follower, Candidate:
 				// if receive rpc, then break select
