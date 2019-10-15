@@ -169,6 +169,9 @@ func (rf* Raft) toLeader() {
 	// after to be leader, something need initialize
 	rf.nextIndex = make([]int, len(rf.peers))
 	rf.matchIndex = make([]int, len(rf.peers))
+	for i:=0; i<len(rf.matchIndex); i++ {
+		rf.matchIndex[i] = -1
+	}
 	// initialize nextIndex for each server, it should be leader's last log index plus 1
 	for i:=0; i<len(rf.peers); i++ {
 		rf.nextIndex[i] = rf.getLastLogIndex()+1
@@ -279,12 +282,13 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	// rules for servers:all servers : if RPC request or response contains term T > currentTerm
 	// set currentTerm = T, convert to follower
-
+	/*
 	rf.mu.Lock()
 	log.Printf("candidate'index: %v, candidate'term: %v, follower's index: %v, follower.term: %v",
 		args.CandidateId, args.Term, rf.me, rf.currentTerm )
 	rf.mu.Unlock()
 
+	 */
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	if rf.currentTerm < args.Term {
@@ -302,13 +306,14 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// 2
 	if (rf.votedFor==UNKNOWN || rf.votedFor==args.CandidateId) &&
 		(args.LastLogTerm > rf.getLastLogTerm() ||
-			((args.LastLogTerm==rf.getLastLogTerm())&& (args.LastLogIndex>=rf.getLastLogTerm()))) {
+			((args.LastLogTerm==rf.getLastLogTerm())&& (args.LastLogIndex>=rf.getLastLogIndex()))) {
 		reply.VoteGranted = true
 		rf.votedFor = args.CandidateId
 		rf.state = Follower
 		// reset election time
 		reset(rf.votedCh)
 	}
+
 
 }
 
@@ -372,12 +377,12 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	// rules for servers:all servers : if RPC request or response contains term T > currentTerm
 	// set currentTerm = T, convert to follower
-
+/*
 	rf.mu.Lock()
 	log.Printf("follower's index :%v, follower's term: %v, leader's index: %v, leader's term: %v",
 		rf.me, rf.currentTerm, args.LeaderId, args.Term)
 	rf.mu.Unlock()
-
+*/
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	// initialize AppendEntriesReply struct
@@ -393,11 +398,10 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-/**
 	if args.PrevLogIndex > len(rf.log)-1 {
 		return
 	}
- */
+
 	prevLogIndexTerm := -1
 	if args.PrevLogIndex >=0 && args.PrevLogIndex < len(rf.log) {
 		prevLogIndexTerm = rf.log[args.PrevLogIndex].Term
@@ -424,11 +428,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.commitIndex = min(args.LeaderCommit, len(rf.log)-1)
 		rf.apply()
 	}
-	/*
-	log.Printf("follower's commitIndex: %v, leader's commitIndex: %v",
+/*
+	log.Printf("follower's commitIndex: %v,  leader's commitIndex: %v" ,
 		rf.commitIndex, args.LeaderCommit)
 
-	 */
+ */
+	//log.Printf("follower.log.len: %v, leader.log.len: %v", len(rf.log), len(args.Entries))
 
 	reply.Success = true
 }
@@ -471,12 +476,16 @@ func (rf* Raft) appendLogEntries() {
 					return
 				}
 				if reply.Success {
+/*
 					rf.mu.Unlock()
 					rf.mu.Lock()
 					info.Printf("rf.currentTerm: %v, follower: %v",
 						 rf.currentTerm, index )
 					rf.mu.Unlock()
 					rf.mu.Lock()
+
+ */
+
 					rf.matchIndex[index] = args.PrevLogIndex + len(args.Entries)
 					rf.nextIndex[index] = rf.matchIndex[index] + 1
 
@@ -513,6 +522,7 @@ func (rf* Raft) appendLogEntries() {
 // if commitIndex>lastApplied, then lastApplied+1. and apply
 // log[lastApplied] to state machine
 func (rf *Raft) apply() {
+
 	for rf.commitIndex > rf.lastApplied {
 		rf.lastApplied++
 		currLog := rf.log[rf.lastApplied]
@@ -618,6 +628,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.applyCh = applyCh
 	rf.nextIndex = make([]int, len(peers))
 	rf.matchIndex = make([]int, len(peers))
+	for i:=0; i<len(rf.matchIndex); i++ {
+		rf.matchIndex[i] = -1
+	}
 	rf.votedCh = make(chan bool, 1)
 	rf.appendLogEntryCh = make(chan bool, 1)
 	// initialize from state persisted before a crash
