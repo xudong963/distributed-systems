@@ -13,6 +13,7 @@ package raft
 //
 
 import (
+	"bytes"
 	"log"
 	"os"
 	"labrpc"
@@ -20,6 +21,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"labgob"
 )
 // log
 
@@ -94,6 +96,9 @@ type Raft struct {
 	applyCh   chan ApplyMsg
 	votedCh   chan bool
 	appendLogEntryCh chan bool
+
+	LastIncludedIndex int   // the last log entry's index in snapshotting
+	LastIncludedTerm int    // the last lag entry's term in snapshotting
 }
 
 
@@ -117,13 +122,13 @@ func (rf *Raft) GetState() (int, bool) {
 //
 func (rf *Raft) persist() {
 	// Your code here (2C).
-	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// data := w.Bytes()
-	// rf.persister.SaveRaftState(data)
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.log)
+	data := w.Bytes()
+	rf.persister.SaveRaftState(data)
 }
 
 //
@@ -134,18 +139,18 @@ func (rf *Raft) readPersist(data []byte) {
 		return
 	}
 	// Your code here (2C).
-	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var currentTerm int
+	var votedFor int
+	var logs     []LogEntry
+	if d.Decode(&currentTerm) != nil || d.Decode(&votedFor) != nil || d.Decode(&logs) != nil {
+		log.Fatalf("readPersist error for server: %v", rf.me)
+	}else {
+		rf.currentTerm = currentTerm
+		rf.votedFor = votedFor
+		rf.log = logs
+	}
 }
 
 
@@ -154,6 +159,7 @@ func (rf* Raft) toCandidate() {
 	rf.state = Candidate
 	rf.votedFor = rf.me
 	rf.currentTerm++
+	rf.persist()
 	reset(rf.votedCh)
 	//invoke vote to be leader
 	go rf.electForLeader()
@@ -181,6 +187,7 @@ func (rf* Raft) toFollower(term int) {
 	rf.state = Follower
 	rf.votedFor = UNKNOWN
 	rf.currentTerm = term
+	rf.persist()
 }
 
 func (rf* Raft) getLastLogIndex() int {
@@ -278,9 +285,6 @@ func reset(ch chan bool)  {
 // example RequestVote RPC handler.
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	// Your code here (2A, 2B).
-	// rules for servers:all servers : if RPC request or response contains term T > currentTerm
-	// set currentTerm = T, convert to follower
 	/*
 	rf.mu.Lock()
 	log.Printf("candidate'index: %v, candidate'term: %v, follower's index: %v, follower.term: %v",
@@ -309,6 +313,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		reply.VoteGranted = true
 		rf.votedFor = args.CandidateId
 		rf.state = Follower
+		rf.persist()
 		// reset election time
 		reset(rf.votedCh)
 	}
@@ -374,8 +379,6 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // AppendEntries PRC handler
 // see AppendEntries RPC in figure2
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	// rules for servers:all servers : if RPC request or response contains term T > currentTerm
-	// set currentTerm = T, convert to follower
 /*
 	rf.mu.Lock()
 	log.Printf("follower's index :%v, follower's term: %v, leader's index: %v, leader's term: %v",
@@ -414,11 +417,13 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		index++
 		if index >= len(rf.log) {
 			rf.log = append(rf.log, args.Entries[i:]...)
+			rf.persist()
 			break
 		}
 		if rf.log[index].Term != args.Entries[i].Term {
 			rf.log = rf.log[:index]
 			rf.log = append(rf.log, args.Entries[i:]...)
+			rf.persist()
 			break
 		}
 	}
@@ -571,6 +576,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 			Command: command,
 		}
 		rf.log = append(rf.log, newLogEntry)
+		rf.persist()
 		rf.appendLogEntries()
 	}
 	return index, term, isLeader
