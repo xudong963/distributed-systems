@@ -22,6 +22,9 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	Operator string
+	Key string
+	Value string
 }
 
 type KVServer struct {
@@ -29,19 +32,62 @@ type KVServer struct {
 	me      int
 	rf      *raft.Raft
 	applyCh chan raft.ApplyMsg
+	kvDB      map[string]string
 
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
+	mapCh   map[int] chan Op  // for each raft log entry
 }
 
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
+	op := Op{
+		Operator: "Get",
+		Key:      args.Key,
+		Value:    "",
+	}
+	_, isLeader := kv.rf.GetState()
+	reply.WrongLeader = true
+	if !isLeader { return }
+	index, _, isleader := kv.rf.Start(op)
+	if !isleader { return }
+	// no found
+	_, ok := kv.mapCh[index]
+	if !ok {
+		kv.mapCh[index] = make(chan Op, 1)
+	}
+	newOp:= <- kv.mapCh[index]
+	// check identical, then get value from kvDB and return to client
+	if op.Key==newOp.Key && op.Value==newOp.Value && op.Operator==newOp.Operator {
+		reply.WrongLeader = false
+		reply.Value = kv.kvDB[op.Key]
+		return
+	}
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
+	op := Op{
+		Operator: args.Op,
+		Key:   args.Key,
+		Value: args.Value,
+	}
+	reply.WrongLeader = true
+	_, isLeader := kv.rf.GetState()
+	if !isLeader { return }
+	index, _, isleader := kv.rf.Start(op)
+	if !isleader { return }
+	_, ok := kv.mapCh[index]
+	if !ok {
+		kv.mapCh[index] = make(chan Op, 1)
+	}
+	newOp:= <- kv.mapCh[index]
+	if newOp.Key==op.Key && newOp.Operator==op.Operator && newOp.Value==op.Value {
+		reply.WrongLeader = false
+		return
+	}
 }
 
 //
@@ -79,11 +125,28 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.maxraftstate = maxraftstate
 
 	// You may need initialization code here.
-
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
+	kv.mapCh = make(map[int] chan Op)
+	kv.kvDB = make(map[string]string)
+	go func() {
+		for msg := range kv.applyCh {
+			op := msg.Command.(Op)
+			if op.Operator == "Put" {
+				kv.kvDB[op.Key] = op.Value
+			}else if op.Operator == "Append" {
+				kv.kvDB[op.Key] += op.Value
+			}
+			index := msg.CommandIndex
+			_, ok := kv.mapCh[index]
+			if !ok {
+				kv.mapCh[index] = make(chan Op, 1)
+			}
+			ch := kv.mapCh[index]
+			ch <- op
+		}
+	}()
 
 	// You may need initialization code here.
-
 	return kv
 }
