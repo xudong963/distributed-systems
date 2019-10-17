@@ -96,6 +96,7 @@ type Raft struct {
 	applyCh   chan ApplyMsg
 	votedCh   chan bool
 	appendLogEntryCh chan bool
+	killCh    chan bool
 
 	LastIncludedIndex int   // the last log entry's index in snapshotting
 	LastIncludedTerm int    // the last lag entry's term in snapshotting
@@ -369,6 +370,8 @@ type AppendEntriesArgs struct {
 type AppendEntriesReply struct {
 	Term int                          // currentTerm, for leader to update itself
 	Success bool                      // true if follower contained entry matching prevLogIndex and prevLogTerm
+	ConflictTerm int
+	ConflictIndex int
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
@@ -393,6 +396,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 	reply.Success = false
 	reply.Term = rf.currentTerm
+	reply.ConflictIndex = -1
+	reply.ConflictTerm = -1
 	reset(rf.appendLogEntryCh)
 
 	// reply false if term < currentTerm
@@ -401,12 +406,21 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	if args.PrevLogIndex > len(rf.log)-1 {
+		reply.ConflictIndex = len(rf.log)
 		return
 	}
 
-
 	if args.PrevLogIndex >=0 && args.PrevLogIndex < len(rf.log) {
 		if args.PrevLogTerm != rf.log[args.PrevLogIndex].Term {
+			reply.ConflictTerm = rf.log[args.PrevLogIndex].Term
+			//  then search its log for the first index
+			//  whose entry has term equal to conflictTerm.
+			for i:=0; i<len(rf.log); i++ {
+				if rf.log[i].Term==reply.ConflictTerm {
+					reply.ConflictIndex = i
+					break
+				}
+			}
 			return
 		}
 	}
@@ -468,11 +482,11 @@ func (rf* Raft) appendLogEntries() {
 				reply := &AppendEntriesReply{}
 				respond := rf.sendAppendEntries(index, &args, reply)
 				rf.mu.Lock()
-				if !respond || rf.state != Leader {
+				if !respond || rf.state != Leader || rf.currentTerm != args.Term{
 					rf.mu.Unlock()
 					return
 				}
-				if reply.Term > rf.currentTerm {
+				if reply.Term > rf.currentTerm  {
 					rf.toFollower(reply.Term)
 					rf.mu.Unlock()
 					return
@@ -504,8 +518,16 @@ func (rf* Raft) appendLogEntries() {
 					rf.mu.Unlock()
 					return
 				} else {
-
-					rf.nextIndex[index]--
+					rf.nextIndex[index] = reply.ConflictIndex
+					if reply.ConflictTerm != -1 {
+						c := 0
+						for i:=0; i<len(rf.log); i++ {
+							if rf.log[i].Term == reply.ConflictTerm {
+								c = i
+							}
+						}
+						rf.nextIndex[index] = c+1
+					}
 					rf.mu.Unlock()
 				}
 			}
@@ -590,6 +612,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 //
 func (rf *Raft) Kill() {
 	// Your code here, if desired.
+	reset(rf.killCh)
 }
 
 //
@@ -627,12 +650,18 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	}
 	rf.votedCh = make(chan bool, 1)
 	rf.appendLogEntryCh = make(chan bool, 1)
+	rf.killCh = make(chan bool, 1)
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 	heartbeatTime := time.Duration(100) * time.Millisecond
 	//modify Make() to create a background goroutine
 	go func() {
 		for {
+			select {
+			case <-rf.killCh:
+				return
+			default :
+			}
 			electionTimeout := time.Duration(rand.Intn(200) + 300) * time.Millisecond
 			rf.mu.Lock()
 			state := rf.state
