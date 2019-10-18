@@ -12,6 +12,13 @@ type Clerk struct {
 	// and send the next RPC to that server first. This will avoid wasting time searching for the leader on every RPC,
 	// which may help you pass some of the tests quickly enough.
 	SelectedServer int
+	// One simple and fairly efficient one is to give each client a unique identifier,
+	// and then have them tag each request with a monotonically increasing sequence number.
+	// If a client re-sends a request, it re-uses the same sequence number.
+	// Your server keeps track of the latest sequence number it has seen for each client,
+	// and simply ignores any operation that it has already seen.
+	id int64
+	seqNum int
 }
 
 func nrand() int64 {
@@ -25,6 +32,8 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
 	// You'll have to add code here.
+	ck.id = nrand()
+	ck.seqNum = 0
 	return ck
 }
 
@@ -44,10 +53,10 @@ func (ck *Clerk) Get(key string) string {
 
 	// You will have to modify this function.
 	i := ck.SelectedServer
+	args := GetArgs{
+		Key: key,
+	}
 	for {
-		args := GetArgs{
-			Key: key,
-		}
 		reply := &GetReply{}
 		ok := ck.servers[i].Call("KVServer.Get", &args, &reply)
 		if !ok || reply.WrongLeader {
@@ -72,13 +81,16 @@ func (ck *Clerk) Get(key string) string {
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
+	args := PutAppendArgs{
+		Key:   key,
+		Value: value,
+		Op:    op,
+		Id: ck.id,
+		SeqNum: ck.seqNum,
+	}
+	ck.seqNum ++
 	i := ck.SelectedServer
 	for {
-		args := PutAppendArgs{
-			Key:   key,
-			Value: value,
-			Op:    op,
-		}
 		reply := &PutAppendReply{}
 		ok := ck.servers[i].Call("KVServer.PutAppend", &args, &reply)
 

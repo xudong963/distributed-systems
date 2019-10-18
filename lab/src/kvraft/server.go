@@ -4,9 +4,20 @@ import (
 	"labgob"
 	"labrpc"
 	"log"
+	"os"
 	"raft"
 	"sync"
+	"time"
 )
+
+var info *log.Logger
+func init() {
+	_, err := os.OpenFile("infoFile.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 6666)
+	if err != nil {
+		log.Fatalln("fail to open log: ", err)
+	}
+	info = log.New(os.Stdout, "Info: ",log.Ltime|log.Lshortfile)
+}
 
 const Debug = 0
 
@@ -25,6 +36,8 @@ type Op struct {
 	Operator string
 	Key string
 	Value string
+	Id int64
+	SeqNum int
 }
 
 type KVServer struct {
@@ -38,6 +51,7 @@ type KVServer struct {
 
 	// Your definitions here.
 	mapCh   map[int] chan Op  // for each raft log entry
+	idToSeq map[int64]int
 }
 
 
@@ -53,16 +67,14 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	if !isLeader { return }
 	index, _, isleader := kv.rf.Start(op)
 	if !isleader { return }
-	// no found
-	_, ok := kv.mapCh[index]
-	if !ok {
-		kv.mapCh[index] = make(chan Op, 1)
-	}
-	newOp:= <- kv.mapCh[index]
+	ch := kv.getIndexCh(index)
+	newOp:= checkTime(ch)
 	// check identical, then get value from kvDB and return to client
 	if op.Key==newOp.Key && op.Value==newOp.Value && op.Operator==newOp.Operator {
 		reply.WrongLeader = false
+		kv.mu.Lock()
 		reply.Value = kv.kvDB[op.Key]
+		kv.mu.Unlock()
 		return
 	}
 }
@@ -73,20 +85,42 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		Operator: args.Op,
 		Key:   args.Key,
 		Value: args.Value,
+		Id: args.Id,
+		SeqNum: args.SeqNum,
 	}
 	reply.WrongLeader = true
 	_, isLeader := kv.rf.GetState()
 	if !isLeader { return }
 	index, _, isleader := kv.rf.Start(op)
 	if !isleader { return }
+	ch := kv.getIndexCh(index)
+	newOp:= checkTime(ch)
+	if newOp.Key==op.Key && newOp.Operator==op.Operator &&
+		newOp.Value==op.Value && newOp.SeqNum==op.SeqNum && newOp.Id==op.Id{
+		reply.WrongLeader = false
+		return
+	}
+}
+
+func (kv *KVServer) getIndexCh(index int) chan Op{
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
 	_, ok := kv.mapCh[index]
 	if !ok {
 		kv.mapCh[index] = make(chan Op, 1)
 	}
-	newOp:= <- kv.mapCh[index]
-	if newOp.Key==op.Key && newOp.Operator==op.Operator && newOp.Value==op.Value {
-		reply.WrongLeader = false
-		return
+	ch := kv.mapCh[index]
+	return ch
+}
+
+// if partition, raft's leader may not commit, so ck will block
+// add timeout
+func checkTime(ch chan Op)Op {
+	select {
+	case op:=<-ch:
+		return op
+	case <-time.After(time.Second):
+		return Op{}
 	}
 }
 
@@ -129,20 +163,25 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.mapCh = make(map[int] chan Op)
 	kv.kvDB = make(map[string]string)
+	kv.idToSeq = make(map[int64]int)
 	go func() {
 		for msg := range kv.applyCh {
 			op := msg.Command.(Op)
-			if op.Operator == "Put" {
-				kv.kvDB[op.Key] = op.Value
-			}else if op.Operator == "Append" {
-				kv.kvDB[op.Key] += op.Value
+			kv.mu.Lock()
+			sn, okk := kv.idToSeq[op.Id]
+			//info.Printf("op.Id: %v, op.SeqNum: %v, key: %v, value: %v",
+				//op.Id, op.SeqNum, op.Key, kv.kvDB[op.Key])
+			if !okk || op.SeqNum>sn {
+				if op.Operator == "Put" {
+					kv.kvDB[op.Key] = op.Value
+				}else if op.Operator == "Append" {
+					kv.kvDB[op.Key] += op.Value
+				}
+				kv.idToSeq[op.Id] = op.SeqNum
 			}
+			kv.mu.Unlock()
 			index := msg.CommandIndex
-			_, ok := kv.mapCh[index]
-			if !ok {
-				kv.mapCh[index] = make(chan Op, 1)
-			}
-			ch := kv.mapCh[index]
+			ch := kv.getIndexCh(index)
 			ch <- op
 		}
 	}()
