@@ -1,6 +1,7 @@
 package raftkv
 
 import (
+	"bytes"
 	"labgob"
 	"labrpc"
 	"log"
@@ -52,6 +53,7 @@ type KVServer struct {
 	// Your definitions here.
 	mapCh   map[int] chan Op  // for each raft log entry
 	idToSeq map[int64]int
+	persister *raft.Persister
 }
 
 
@@ -124,6 +126,26 @@ func checkTime(ch chan Op)Op {
 	}
 }
 
+// when server launches, read snapshot
+func (kv* KVServer) readSnapShot(snapShot []byte)  {
+	if len(snapShot)<1 { return }
+	r := bytes.NewBuffer(snapShot)
+	d := labgob.NewDecoder(r)
+
+	if d.Decode(&kv.kvDB) != nil && d.Decode(&kv.idToSeq) != nil {
+		log.Fatalf("read snapShot failed")
+	}
+}
+
+func (kv *KVServer) startSnapShot(index int) {
+
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(kv.kvDB)
+	e.Encode(kv.mapCh)
+	kv.rf.StartSnapShot(w.Bytes(), index)
+}
+
 //
 // the tester calls Kill() when a KVServer instance won't
 // be needed again. you are not required to do anything
@@ -133,6 +155,7 @@ func checkTime(ch chan Op)Op {
 func (kv *KVServer) Kill() {
 	kv.rf.Kill()
 	// Your code here, if desired.
+
 }
 
 //
@@ -164,6 +187,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.mapCh = make(map[int] chan Op)
 	kv.kvDB = make(map[string]string)
 	kv.idToSeq = make(map[int64]int)
+	kv.persister = persister
 	go func() {
 		for msg := range kv.applyCh {
 			op := msg.Command.(Op)
@@ -183,6 +207,12 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 			index := msg.CommandIndex
 			ch := kv.getIndexCh(index)
 			ch <- op
+
+			// judge if need to start snapshot
+			var threshold = int(1.5*float64(kv.maxraftstate))
+			if kv.maxraftstate != -1 && kv.persister.RaftStateSize() >= threshold {
+				kv.startSnapShot(index)
+			}
 		}
 	}()
 
