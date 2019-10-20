@@ -54,6 +54,7 @@ type KVServer struct {
 	mapCh   map[int] chan Op  // for each raft log entry
 	idToSeq map[int64]int
 	persister *raft.Persister
+	killCh  chan bool
 }
 
 
@@ -155,6 +156,7 @@ func (kv *KVServer) startSnapShot(index int) {
 func (kv *KVServer) Kill() {
 	kv.rf.Kill()
 	// Your code here, if desired.
+	kv.killCh <- true
 
 }
 
@@ -189,33 +191,38 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.idToSeq = make(map[int64]int)
 	kv.persister = persister
 	go func() {
-		for msg := range kv.applyCh {
-			op := msg.Command.(Op)
-			kv.mu.Lock()
-			sn, okk := kv.idToSeq[op.Id]
-			//info.Printf("op.Id: %v, op.SeqNum: %v, key: %v, value: %v",
-				//op.Id, op.SeqNum, op.Key, kv.kvDB[op.Key])
-			if !okk || op.SeqNum>sn {
-				if op.Operator == "Put" {
-					kv.kvDB[op.Key] = op.Value
-				}else if op.Operator == "Append" {
-					kv.kvDB[op.Key] += op.Value
+		for {
+			select {
+			case <- kv.killCh:
+				return
+			case msg := <- kv.applyCh:
+				if !msg.CommandValid {
+					kv.readSnapShot(msg.SnapShot)
+					continue
 				}
-				kv.idToSeq[op.Id] = op.SeqNum
-			}
-			kv.mu.Unlock()
-			index := msg.CommandIndex
-			ch := kv.getIndexCh(index)
-			ch <- op
+				op := msg.Command.(Op)
+				kv.mu.Lock()
+				sn, okk := kv.idToSeq[op.Id]
+				if !okk || op.SeqNum>sn {
+					if op.Operator == "Put" {
+						kv.kvDB[op.Key] = op.Value
+					}else if op.Operator == "Append" {
+						kv.kvDB[op.Key] += op.Value
+					}
+					kv.idToSeq[op.Id] = op.SeqNum
+				}
+				kv.mu.Unlock()
+				index := msg.CommandIndex
+				ch := kv.getIndexCh(index)
+				ch <- op
 
-			// judge if need to start snapshot
-			var threshold = int(1.5*float64(kv.maxraftstate))
-			if kv.maxraftstate != -1 && kv.persister.RaftStateSize() >= threshold {
-				kv.startSnapShot(index)
+				// judge if need to start snapshot
+				var threshold = int(1.5*float64(kv.maxraftstate))
+				if kv.maxraftstate != -1 && kv.persister.RaftStateSize() >= threshold {
+					go kv.startSnapShot(index)
+				}
 			}
 		}
 	}()
-
-	// You may need initialization code here.
 	return kv
 }
