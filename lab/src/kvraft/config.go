@@ -71,6 +71,7 @@ func (cfg *config) cleanup() {
 	defer cfg.mu.Unlock()
 	for i := 0; i < len(cfg.kvservers); i++ {
 		if cfg.kvservers[i] != nil {
+			//info.Printf("kill kvservers: %v", i)
 			cfg.kvservers[i].Kill()
 		}
 	}
@@ -422,4 +423,5 @@ func (cfg *config) end() {
 		fmt.Printf("  ... Passed --")
 		fmt.Printf("  %4.1f  %d %5d %4d\n", t, npeers, nrpc, ops)
 	}
+	//info.Printf("第一个测试完成")
 }

@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"raft"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -63,7 +64,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	op := Op{
 		Operator: "Get",
 		Key:      args.Key,
-		Value:    "",
+		Value:    strconv.FormatInt(nrand(), 10),
 	}
 	_, isLeader := kv.rf.GetState()
 	reply.WrongLeader = true
@@ -142,8 +143,11 @@ func (kv *KVServer) startSnapShot(index int) {
 
 	w := new(bytes.Buffer)
 	e := labgob.NewEncoder(w)
+	kv.mu.Lock()
 	e.Encode(kv.kvDB)
 	e.Encode(kv.mapCh)
+	kv.mu.Unlock()
+	info.Printf("进入rf")
 	kv.rf.StartSnapShot(w.Bytes(), index)
 }
 
@@ -154,11 +158,15 @@ func (kv *KVServer) startSnapShot(index int) {
 // turn off debug output from this instance.
 //
 func (kv *KVServer) Kill() {
+	//info.Println("开始kill....")
 	kv.rf.Kill()
+	//info.Println("kill kvserver")
 	// Your code here, if desired.
 	kv.killCh <- true
+	//info.Println("kv.killCh有东西了")
 
 }
+
 
 //
 // servers[] contains the ports of the set of
@@ -184,16 +192,20 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.maxraftstate = maxraftstate
 
 	// You may need initialization code here.
+	kv.persister = persister
 	kv.applyCh = make(chan raft.ApplyMsg)
+	kv.readSnapShot(kv.persister.ReadSnapshot())
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.mapCh = make(map[int] chan Op)
 	kv.kvDB = make(map[string]string)
 	kv.idToSeq = make(map[int64]int)
-	kv.persister = persister
+	kv.killCh = make(chan bool, 1)
 	go func() {
 		for {
+
 			select {
 			case <- kv.killCh:
+				//info.Println("kill 成功")
 				return
 			case msg := <- kv.applyCh:
 				if !msg.CommandValid {
@@ -212,15 +224,15 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 					kv.idToSeq[op.Id] = op.SeqNum
 				}
 				kv.mu.Unlock()
-				index := msg.CommandIndex
-				ch := kv.getIndexCh(index)
-				ch <- op
-
 				// judge if need to start snapshot
 				var threshold = int(1.5*float64(kv.maxraftstate))
 				if kv.maxraftstate != -1 && kv.persister.RaftStateSize() >= threshold {
-					go kv.startSnapShot(index)
+					info.Println("开始snapShot")
+					go kv.startSnapShot(msg.CommandIndex)
 				}
+
+				ch := kv.getIndexCh(msg.CommandIndex)
+				ch <- op
 			}
 		}
 	}()
