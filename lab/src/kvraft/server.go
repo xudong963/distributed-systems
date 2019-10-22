@@ -130,7 +130,7 @@ func checkTime(ch chan Op)Op {
 
 // when server launches, read snapshot
 func (kv* KVServer) readSnapShot(snapShot []byte)  {
-	if len(snapShot)<1 { return }
+	if snapShot==nil || len(snapShot)<1 { return }
 	r := bytes.NewBuffer(snapShot)
 	d := labgob.NewDecoder(r)
 

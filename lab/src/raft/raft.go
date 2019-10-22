@@ -154,9 +154,9 @@ func (rf *Raft) readPersist(data []byte) {
 	var Log []LogEntry
 	var LastIncludedIndex int
 	var LastIncludedTerm int
-	if d.Decode(&currentTerm) != nil  ||
-		d.Decode(&votedFor) != nil || d.Decode(&Log) != nil ||
-		d.Decode(&LastIncludedIndex) != nil || d.Decode(&LastIncludedTerm) != nil {
+	if d.Decode(&currentTerm) != nil  &&
+		d.Decode(&votedFor) != nil && d.Decode(&Log) != nil &&
+		d.Decode(&LastIncludedIndex) != nil && d.Decode(&LastIncludedTerm) != nil {
 		log.Fatalf("readPersist error for server: %v", rf.me)
 	}else {
 		rf.mu.Lock()
