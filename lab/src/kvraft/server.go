@@ -65,6 +65,8 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		Operator: "Get",
 		Key:      args.Key,
 		Value:    strconv.FormatInt(nrand(), 10),
+		Id:0,
+		SeqNum:0,
 	}
 	_, isLeader := kv.rf.GetState()
 	reply.WrongLeader = true
@@ -74,7 +76,8 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	ch := kv.getIndexCh(index)
 	newOp:= checkTime(ch)
 	// check identical, then get value from kvDB and return to client
-	if op.Key==newOp.Key && op.Value==newOp.Value && op.Operator==newOp.Operator {
+	if op.Key==newOp.Key && op.Value==newOp.Value && op.Operator==newOp.Operator &&
+		newOp.SeqNum==op.SeqNum && newOp.Id==op.Id {
 		reply.WrongLeader = false
 		kv.mu.Lock()
 		reply.Value = kv.kvDB[op.Key]
@@ -147,7 +150,7 @@ func (kv *KVServer) startSnapShot(index int) {
 	e.Encode(kv.kvDB)
 	e.Encode(kv.mapCh)
 	kv.mu.Unlock()
-	info.Printf("进入rf")
+	//info.Printf("进入rf")
 	kv.rf.StartSnapShot(w.Bytes(), index)
 }
 
@@ -165,6 +168,15 @@ func (kv *KVServer) Kill() {
 	kv.killCh <- true
 	//info.Println("kv.killCh有东西了")
 
+}
+
+func (kv *KVServer) needSnapShot() bool {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	var threshold = int(1.5*float64(kv.maxraftstate))
+	if kv.maxraftstate != -1 && kv.persister.RaftStateSize() >= threshold {
+		return true
+	}else { return false }
 }
 
 
@@ -195,14 +207,13 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.persister = persister
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.readSnapShot(kv.persister.ReadSnapshot())
-	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.mapCh = make(map[int] chan Op)
 	kv.kvDB = make(map[string]string)
 	kv.idToSeq = make(map[int64]int)
+	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.killCh = make(chan bool, 1)
 	go func() {
 		for {
-
 			select {
 			case <- kv.killCh:
 				//info.Println("kill 成功")
@@ -225,12 +236,10 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 				}
 				kv.mu.Unlock()
 				// judge if need to start snapshot
-				var threshold = int(1.5*float64(kv.maxraftstate))
-				if kv.maxraftstate != -1 && kv.persister.RaftStateSize() >= threshold {
-					info.Println("开始snapShot")
+				if kv.needSnapShot() {
+					//info.Println("开始snapShot")
 					go kv.startSnapShot(msg.CommandIndex)
 				}
-
 				ch := kv.getIndexCh(msg.CommandIndex)
 				ch <- op
 			}
