@@ -147,7 +147,7 @@ func (kv *KVServer) startSnapShot(index int) {
 	e.Encode(kv.kvDB)
 	e.Encode(kv.mapCh)
 	kv.mu.Unlock()
-	info.Printf("进入rf")
+	//info.Printf("进入rf")
 	kv.rf.StartSnapShot(w.Bytes(), index)
 }
 
@@ -227,7 +227,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 				// judge if need to start snapshot
 				var threshold = int(1.5*float64(kv.maxraftstate))
 				if kv.maxraftstate != -1 && kv.persister.RaftStateSize() >= threshold {
-					info.Println("开始snapShot")
+					//info.Println("开始snapShot")
 					go kv.startSnapShot(msg.CommandIndex)
 				}
 

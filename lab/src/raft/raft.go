@@ -18,6 +18,7 @@ import (
 	"os"
 	"labrpc"
 	"math/rand"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -164,7 +165,7 @@ func (rf *Raft) readPersist(data []byte) {
 		rf.log = Log
 
 		rf.LastIncludedIndex = LastIncludedIndex
-		info.Printf("rf.me: %v, LastIncludedIndex: %v", rf.me, rf.LastIncludedIndex)
+		//info.Printf("rf.me: %v, LastIncludedIndex: %v", rf.me, rf.LastIncludedIndex)
 		rf.LastIncludedTerm = LastIncludedTerm
 		rf.commitIndex = rf.LastIncludedIndex
 		rf.lastApplied = rf.LastIncludedIndex
@@ -182,7 +183,7 @@ func (rf* Raft) StartSnapShot(snapShot []byte, index int)  {
 	newLog = append(newLog, rf.log[index-rf.LastIncludedIndex:]...)
 	rf.log = newLog
 	rf.LastIncludedIndex = index
-	info.Printf("rf.me: %v, LastIncludedIndex: %v", rf.me, rf.LastIncludedIndex)
+	//info.Printf("rf.me: %v, LastIncludedIndex: %v", rf.me, rf.LastIncludedIndex)
 	rf.LastIncludedTerm = rf.log[index-rf.LastIncludedIndex].Term
 	rf.persister.SaveStateAndSnapshot(rf.encode(), snapShot)
 }
@@ -446,6 +447,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
 
 		if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
+			reply.ConflictIndex = rf.logLen()  // necessary
 			reply.ConflictTerm = rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term
 			//  then search its log for the first index
 			//  whose entry has term equal to conflictTerm.
@@ -468,7 +470,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			rf.persist()
 			break
 		}
-		info.Printf("index: %v, LastIncludedIndex: %v, rf.me: %v", index, rf.LastIncludedIndex, rf.me)
+		//info.Printf("index: %v, LastIncludedIndex: %v, rf.me: %v", index, rf.LastIncludedIndex, rf.me)
 		if rf.log[index-rf.LastIncludedIndex].Term != args.Entries[i].Term {
 			rf.log = rf.log[:index-rf.LastIncludedIndex]
 			rf.log = append(rf.log, args.Entries[i:]...)
@@ -505,7 +507,7 @@ func (rf* Raft) appendLogEntries() {
 				}
 
 				if rf.nextIndex[index] - rf.LastIncludedIndex < 1 {
-					info.Printf("index: %v, 进入snapshot", index)
+					//info.Printf("index: %v, 进入snapshot", index)
 					rf.transmitSnapShot(index)
 					return
 				}
@@ -517,7 +519,7 @@ func (rf* Raft) appendLogEntries() {
 					Entries:      append(make([]LogEntry, 0), rf.log[rf.nextIndex[index]-rf.LastIncludedIndex:]...),
 					LeaderCommit: rf.commitIndex,
 				}
-				info.Printf("args.prevlogIndex：%v. rf.me:%v", rf.getPrevLogIndex(index), index)
+				//info.Printf("args.prevlogIndex：%v. rf.me:%v", rf.getPrevLogIndex(index), index)
 				rf.mu.Unlock()
 
 				reply := &AppendEntriesReply{}
@@ -537,21 +539,14 @@ func (rf* Raft) appendLogEntries() {
 					rf.nextIndex[index] = rf.matchIndex[index] + 1
 					//info.Printf("len(arg.Entries) %v", len(args.Entries))
 					//need to understand
-					for i := rf.logLen()-1; i > rf.commitIndex; i-- {
-						count := 1
-						for server, v := range rf.matchIndex {
-							if server == rf.me {
-								continue
-							}
-							if v >= i {
-								count++
-							}
-						}
-						if count > len(rf.peers)/2 && rf.log[i-rf.LastIncludedIndex].Term==rf.currentTerm{
-							rf.commitIndex = i
-							rf.apply()
-							break
-						}
+					rf.matchIndex[rf.me] = rf.logLen() - 1
+					copyMatchIndex := make([]int,len(rf.matchIndex))
+					copy(copyMatchIndex,rf.matchIndex)
+					sort.Sort(sort.Reverse(sort.IntSlice(copyMatchIndex)))
+					N := copyMatchIndex[len(copyMatchIndex)/2]
+					if N > rf.commitIndex && rf.log[N-rf.LastIncludedIndex].Term == rf.currentTerm {
+						rf.commitIndex = N
+						rf.apply()
 					}
 					rf.mu.Unlock()
 					return
@@ -696,7 +691,7 @@ func (rf *Raft) InstallSnapShot(args* InstallSnapShotArgs, reply* InstallSnapSho
 
 
 	rf.LastIncludedIndex = args.LastIncludedIndex
-	info.Printf("rf.me: %v, rf.LastIncludedIndex: %v", rf.me, rf.LastIncludedIndex)
+	//info.Printf("rf.me: %v, rf.LastIncludedIndex: %v", rf.me, rf.LastIncludedIndex)
 	rf.LastIncludedTerm = args.LastIncludedTerm
 	rf.persister.SaveStateAndSnapshot(rf.encode(), args.Data)
 	rf.commitIndex = max_(rf.commitIndex, rf.LastIncludedIndex)
@@ -728,22 +723,15 @@ func (rf* Raft) transmitSnapShot(server int)  {
 
 	rf.matchIndex[server] = rf.LastIncludedIndex
 	rf.nextIndex[server] = rf.LastIncludedIndex + 1
-	info.Printf("snapshot in arg.PrevlogIndex: %v", rf.LastIncludedIndex)
-	for i := rf.logLen()-1; i > rf.commitIndex; i-- {
-		count := 1
-		for server, v := range rf.matchIndex {
-			if server == rf.me {
-				continue
-			}
-			if v >= i {
-				count++
-			}
-		}
-		if count > len(rf.peers)/2 && rf.log[i-rf.LastIncludedIndex].Term==rf.currentTerm{
-			rf.commitIndex = i
-			rf.apply()
-			break
-		}
+	//info.Printf("snapshot in arg.PrevlogIndex: %v", rf.LastIncludedIndex)
+	rf.matchIndex[rf.me] = rf.logLen() - 1
+	copyMatchIndex := make([]int,len(rf.matchIndex))
+	copy(copyMatchIndex,rf.matchIndex)
+	sort.Sort(sort.Reverse(sort.IntSlice(copyMatchIndex)))
+	N := copyMatchIndex[len(copyMatchIndex)/2]
+	if N > rf.commitIndex && rf.log[N-rf.LastIncludedIndex].Term == rf.currentTerm {
+		rf.commitIndex = N
+		rf.apply()
 	}
 }
 
