@@ -209,6 +209,9 @@ func (rf* Raft) toLeader() {
 	// after to be leader, something need initialize
 	rf.nextIndex = make([]int, len(rf.peers))
 	rf.matchIndex = make([]int, len(rf.peers))
+	for i:=0; i<len(rf.matchIndex); i++ {
+		rf.matchIndex[i] = -1
+	}
 	// initialize nextIndex for each server, it should be leader's last log index plus 1
 	for i:=0; i<len(rf.nextIndex); i++ {
 		rf.nextIndex[i] = rf.getLastLogIndex()+1
@@ -447,7 +450,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
 
 		if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
-			reply.ConflictIndex = rf.logLen()  // necessary
+			//reply.ConflictIndex = rf.logLen()  // necessary
 			reply.ConflictTerm = rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term
 			//  then search its log for the first index
 			//  whose entry has term equal to conflictTerm.
@@ -459,7 +462,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			}
 			return
 		}
+	}else {
+		reply.ConflictIndex = rf.logLen()
+		return
 	}
+
 
 
 	index := args.PrevLogIndex
@@ -555,7 +562,7 @@ func (rf* Raft) appendLogEntries() {
 					rf.nextIndex[index] = reply.ConflictIndex
 					if reply.ConflictTerm != -1 {
 						c := 0
-						for i:=0; i<rf.logLen(); i++ {
+						for i:=rf.LastIncludedIndex; i<rf.logLen(); i++ {
 							if rf.log[i-rf.LastIncludedIndex].Term == reply.ConflictTerm {
 								c = i
 							}
@@ -578,7 +585,6 @@ func (rf *Raft) apply() {
 	for rf.commitIndex > rf.lastApplied {
 		rf.lastApplied++
 		currLog := rf.log[rf.lastApplied-rf.LastIncludedIndex]
-
 		applyMsg := ApplyMsg{
 			CommandValid: true,
 			Command: currLog.Command,
@@ -777,6 +783,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.applyCh = applyCh
 	rf.nextIndex = make([]int, len(peers))
 	rf.matchIndex = make([]int, len(peers))
+    for i:=0; i<len(rf.matchIndex); i++ {
+    	rf.matchIndex[i] = -1
+	}
 	rf.votedCh = make(chan bool, 1)
 	rf.appendLogEntryCh = make(chan bool, 1)
 	rf.killCh = make(chan bool, 1)
