@@ -14,7 +14,7 @@ import (
 
 var info *log.Logger
 func init() {
-	_, err := os.OpenFile("infoFile.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 6666)
+	_, err := os.OpenFile("infoFile.log", os.O_CREATE|os.O_APPEND, 6666)
 	if err != nil {
 		log.Fatalln("fail to open log: ", err)
 	}
@@ -66,10 +66,10 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		Key:      args.Key,
 		Value:    strconv.FormatInt(nrand(), 10),
 	}
-	_, isLeader := kv.rf.GetState()
+
 	reply.WrongLeader = true
-	if !isLeader { return }
 	index, _, isleader := kv.rf.Start(op)
+	//info.Println("重启后添加log")
 	if !isleader { return }
 	ch := kv.getIndexCh(index)
 	newOp:= checkTime(ch)
@@ -93,9 +93,8 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		SeqNum: args.SeqNum,
 	}
 	reply.WrongLeader = true
-	_, isLeader := kv.rf.GetState()
-	if !isLeader { return }
 	index, _, isleader := kv.rf.Start(op)
+	//info.Printf("isLeader: %v", isleader)
 	if !isleader { return }
 	ch := kv.getIndexCh(index)
 	newOp:= checkTime(ch)
@@ -121,15 +120,17 @@ func (kv *KVServer) getIndexCh(index int) chan Op{
 // add timeout
 func checkTime(ch chan Op)Op {
 	select {
-	case op:=<-ch:
+	case op:= <-ch:
 		return op
-	case <-time.After(time.Second):
+	case <-time.After(time.Duration(600)*time.Millisecond):
 		return Op{}
 	}
 }
 
 // when server launches, read snapshot
 func (kv* KVServer) readSnapShot(snapShot []byte)  {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
 	if snapShot==nil || len(snapShot)<1 { return }
 	r := bytes.NewBuffer(snapShot)
 	d := labgob.NewDecoder(r)
@@ -167,6 +168,14 @@ func (kv *KVServer) Kill() {
 
 }
 
+func send(notifyCh chan Op,op Op) {
+	select{
+	case  <-notifyCh:
+	default:
+	}
+	notifyCh <- op
+}
+
 
 //
 // servers[] contains the ports of the set of
@@ -194,15 +203,16 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	// You may need initialization code here.
 	kv.persister = persister
 	kv.applyCh = make(chan raft.ApplyMsg)
-	kv.readSnapShot(kv.persister.ReadSnapshot())
-	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
+	//info.Println("重启")
 	kv.mapCh = make(map[int] chan Op)
 	kv.kvDB = make(map[string]string)
 	kv.idToSeq = make(map[int64]int)
 	kv.killCh = make(chan bool, 1)
+	kv.readSnapShot(kv.persister.ReadSnapshot())
+	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	go func() {
 		for {
-
+			//info.Println("进入for")
 			select {
 			case <- kv.killCh:
 				//info.Println("kill 成功")
@@ -212,6 +222,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 					kv.readSnapShot(msg.SnapShot)
 					continue
 				}
+				//info.Println("开始操作")
 				op := msg.Command.(Op)
 				kv.mu.Lock()
 				sn, okk := kv.idToSeq[op.Id]
@@ -224,6 +235,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 					kv.idToSeq[op.Id] = op.SeqNum
 				}
 				kv.mu.Unlock()
+
 				// judge if need to start snapshot
 				var threshold = int(1.5*float64(kv.maxraftstate))
 				if kv.maxraftstate != -1 && kv.persister.RaftStateSize() >= threshold {
@@ -232,7 +244,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 				}
 
 				ch := kv.getIndexCh(msg.CommandIndex)
-				ch <- op
+				send(ch, op)
 			}
 		}
 	}()

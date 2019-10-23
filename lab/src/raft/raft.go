@@ -30,7 +30,7 @@ import (
 
 var info *log.Logger
 func init() {
-	_, err := os.OpenFile("infoFile.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 6666)
+	_, err := os.OpenFile("infoFile.log", os.O_CREATE|os.O_APPEND, 6666)
 	if err != nil {
 		log.Fatalln("fail to open log: ", err)
 	}
@@ -169,7 +169,7 @@ func (rf *Raft) readPersist(data []byte) {
 		rf.LastIncludedTerm = LastIncludedTerm
 		rf.commitIndex = rf.LastIncludedIndex
 		rf.lastApplied = rf.LastIncludedIndex
-		defer rf.mu.Unlock()
+		rf.mu.Unlock()
 	}
 }
 
@@ -420,10 +420,6 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // see AppendEntries RPC in figure2
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 
-	/*log.Printf("follower's index :%v, leader's index: %v",
-		rf.me,  args.LeaderId)
-
-	 */
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	// initialize AppendEntriesReply struct
@@ -432,7 +428,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 	reply.Success = false
 	reply.Term = rf.currentTerm
-	reply.ConflictIndex = -1
+	reply.ConflictIndex = 0
 	reply.ConflictTerm = -1
 	reset(rf.appendLogEntryCh)
 
@@ -441,16 +437,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-	if args.PrevLogIndex > rf.logLen()-1 {
-		reply.ConflictIndex = rf.logLen()
-		return
-	}
 
 
-	if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
+	//info.Printf("rf.LogLen(): %v, args.prevLogIndex: %v", rf.logLen(), args.PrevLogIndex)
+	if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen()  {
 
 		if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
-			//reply.ConflictIndex = rf.logLen()  // necessary
 			reply.ConflictTerm = rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term
 			//  then search its log for the first index
 			//  whose entry has term equal to conflictTerm.
@@ -466,8 +458,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		reply.ConflictIndex = rf.logLen()
 		return
 	}
-
-
 
 	index := args.PrevLogIndex
 	for i:=0; i<len(args.Entries); i++ {
@@ -488,12 +478,14 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// if leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
 	if rf.commitIndex < args.LeaderCommit {
 		rf.commitIndex = min(args.LeaderCommit, rf.logLen()-1)
+		//.Println("follower apply")
 		rf.apply()
 	}
 /*
 	log.Printf("follower's commitIndex: %v,  leader's commitIndex: %v" ,
 		rf.commitIndex, args.LeaderCommit)
  */
+	//info.Println("发送append请求成功")
 	reply.Success = true
 }
 
@@ -528,7 +520,7 @@ func (rf* Raft) appendLogEntries() {
 				}
 				//info.Printf("args.prevlogIndex：%v. rf.me:%v", rf.getPrevLogIndex(index), index)
 				rf.mu.Unlock()
-
+				//info.Printf("发送append请求, leader: %v", rf.me)
 				reply := &AppendEntriesReply{}
 				respond := rf.sendAppendEntries(index, &args, reply)
 				rf.mu.Lock()
@@ -553,6 +545,7 @@ func (rf* Raft) appendLogEntries() {
 					N := copyMatchIndex[len(copyMatchIndex)/2]
 					if N > rf.commitIndex && rf.log[N-rf.LastIncludedIndex].Term == rf.currentTerm {
 						rf.commitIndex = N
+						//info.Println("commited成功后，apply")
 						rf.apply()
 					}
 					rf.mu.Unlock()
@@ -591,7 +584,9 @@ func (rf *Raft) apply() {
 			CommandIndex: rf.lastApplied,
 			SnapShot: nil,
 		}
+		//info.Println("添加msg  非snapshot")
 		rf.applyCh <- applyMsg
+
 	}
 }
 
@@ -649,7 +644,10 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		rf.log = append(rf.log, newLogEntry)
 		rf.persist()
 		rf.appendLogEntries()
+		//info.Println("添加上log了")
+		//info.Printf("len(rf.log):%v, rf.me: %v", len(rf.log), rf.me)
 	}
+	//info.Println("出来了吗")
 	return index, term, isLeader
 }
 
@@ -702,7 +700,8 @@ func (rf *Raft) InstallSnapShot(args* InstallSnapShotArgs, reply* InstallSnapSho
 	rf.persister.SaveStateAndSnapshot(rf.encode(), args.Data)
 	rf.commitIndex = max_(rf.commitIndex, rf.LastIncludedIndex)
 	rf.lastApplied = max_(rf.lastApplied, rf.LastIncludedIndex)
-	//if rf.lastApplied > rf.LastIncludedIndex {return}
+	if rf.lastApplied > rf.LastIncludedIndex {return}
+	//info.Println("添加msg")
 	rf.applyCh <- msg
 }
 
