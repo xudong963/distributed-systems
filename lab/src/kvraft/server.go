@@ -194,6 +194,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	// You may need initialization code here.
 	kv.persister = persister
 	kv.applyCh = make(chan raft.ApplyMsg)
+	info.Println("重启")
 	kv.readSnapShot(kv.persister.ReadSnapshot())
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.mapCh = make(map[int] chan Op)
@@ -212,6 +213,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 					kv.readSnapShot(msg.SnapShot)
 					continue
 				}
+				info.Println("有msg")
 				op := msg.Command.(Op)
 				kv.mu.Lock()
 				sn, okk := kv.idToSeq[op.Id]
@@ -230,7 +232,6 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 					//info.Println("开始snapShot")
 					go kv.startSnapShot(msg.CommandIndex)
 				}
-
 				ch := kv.getIndexCh(msg.CommandIndex)
 				ch <- op
 			}

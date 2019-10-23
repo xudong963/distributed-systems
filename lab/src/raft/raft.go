@@ -125,8 +125,7 @@ func (rf* Raft)encode() []byte  {
 	e.Encode(rf.log)
 	e.Encode(rf.LastIncludedIndex)
 	e.Encode(rf.LastIncludedTerm)
-	data := w.Bytes()
-	return data
+	return w.Bytes()
 }
 
 //
@@ -154,9 +153,9 @@ func (rf *Raft) readPersist(data []byte) {
 	var Log []LogEntry
 	var LastIncludedIndex int
 	var LastIncludedTerm int
-	if d.Decode(&currentTerm) != nil  &&
-		d.Decode(&votedFor) != nil && d.Decode(&Log) != nil &&
-		d.Decode(&LastIncludedIndex) != nil && d.Decode(&LastIncludedTerm) != nil {
+	if d.Decode(&currentTerm) != nil  ||
+		d.Decode(&votedFor) != nil || d.Decode(&Log) != nil ||
+		d.Decode(&LastIncludedIndex) != nil || d.Decode(&LastIncludedTerm) != nil {
 		log.Fatalf("readPersist error for server: %v", rf.me)
 	}else {
 		rf.mu.Lock()
@@ -169,7 +168,7 @@ func (rf *Raft) readPersist(data []byte) {
 		rf.LastIncludedTerm = LastIncludedTerm
 		rf.commitIndex = rf.LastIncludedIndex
 		rf.lastApplied = rf.LastIncludedIndex
-		defer rf.mu.Unlock()
+		rf.mu.Unlock()
 	}
 }
 
@@ -185,6 +184,7 @@ func (rf* Raft) StartSnapShot(snapShot []byte, index int)  {
 	rf.LastIncludedIndex = index
 	//info.Printf("rf.me: %v, LastIncludedIndex: %v", rf.me, rf.LastIncludedIndex)
 	rf.LastIncludedTerm = rf.log[index-rf.LastIncludedIndex].Term
+	info.Println("存储snapshot")
 	rf.persister.SaveStateAndSnapshot(rf.encode(), snapShot)
 }
 
@@ -441,11 +441,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
+	info.Printf("rf.LogLen(): %v, args.prevLogIndex: %v", rf.logLen(), args.PrevLogIndex)
 	if args.PrevLogIndex > rf.logLen()-1 {
 		reply.ConflictIndex = rf.logLen()
 		return
 	}
-
 
 	if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
 
