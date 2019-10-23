@@ -184,7 +184,7 @@ func (rf* Raft) StartSnapShot(snapShot []byte, index int)  {
 	rf.LastIncludedIndex = index
 	//info.Printf("rf.me: %v, LastIncludedIndex: %v", rf.me, rf.LastIncludedIndex)
 	rf.LastIncludedTerm = rf.log[index-rf.LastIncludedIndex].Term
-	info.Println("存储snapshot")
+	//info.Println("存储snapshot")
 	rf.persister.SaveStateAndSnapshot(rf.encode(), snapShot)
 }
 
@@ -441,7 +441,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-	info.Printf("rf.LogLen(): %v, args.prevLogIndex: %v", rf.logLen(), args.PrevLogIndex)
+	//info.Printf("rf.LogLen(): %v, args.prevLogIndex: %v", rf.logLen(), args.PrevLogIndex)
 	if args.PrevLogIndex > rf.logLen()-1 {
 		reply.ConflictIndex = rf.logLen()
 		return

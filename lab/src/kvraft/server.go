@@ -186,21 +186,20 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
 	labgob.Register(Op{})
-
 	kv := new(KVServer)
 	kv.me = me
 	kv.maxraftstate = maxraftstate
-
-	// You may need initialization code here.
 	kv.persister = persister
-	kv.applyCh = make(chan raft.ApplyMsg)
-	info.Println("重启")
-	kv.readSnapShot(kv.persister.ReadSnapshot())
-	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
-	kv.mapCh = make(map[int] chan Op)
+	// You may need initialization code here.
 	kv.kvDB = make(map[string]string)
+	kv.mapCh = make(map[int]chan Op)
 	kv.idToSeq = make(map[int64]int)
-	kv.killCh = make(chan bool, 1)
+	log.Println("重启")
+	kv.readSnapShot(kv.persister.ReadSnapshot())
+	kv.applyCh = make(chan raft.ApplyMsg)
+	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
+	kv.killCh = make(chan bool,1)
+
 	go func() {
 		for {
 
@@ -213,7 +212,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 					kv.readSnapShot(msg.SnapShot)
 					continue
 				}
-				info.Println("有msg")
+				//info.Println("有msg")
 				op := msg.Command.(Op)
 				kv.mu.Lock()
 				sn, okk := kv.idToSeq[op.Id]
