@@ -148,28 +148,13 @@ func (rf *Raft) readPersist(data []byte) {
 	// Your code here (2C).
 	r := bytes.NewBuffer(data)
 	d := labgob.NewDecoder(r)
-	var currentTerm int
-	var votedFor int
-	var Log []LogEntry
-	var LastIncludedIndex int
-	var LastIncludedTerm int
-	if d.Decode(&currentTerm) != nil  ||
-		d.Decode(&votedFor) != nil || d.Decode(&Log) != nil ||
-		d.Decode(&LastIncludedIndex) != nil || d.Decode(&LastIncludedTerm) != nil {
+	if d.Decode(&rf.currentTerm) != nil  ||
+		d.Decode(&rf.votedFor) != nil || d.Decode(&rf.log) != nil ||
+		d.Decode(&rf.LastIncludedIndex) != nil || d.Decode(&rf.LastIncludedTerm) != nil {
 		log.Fatalf("readPersist error for server: %v", rf.me)
-	}else {
-		rf.mu.Lock()
-		rf.currentTerm = currentTerm
-		rf.votedFor = votedFor
-		rf.log = Log
-
-		rf.LastIncludedIndex = LastIncludedIndex
-		//info.Printf("rf.me: %v, LastIncludedIndex: %v", rf.me, rf.LastIncludedIndex)
-		rf.LastIncludedTerm = LastIncludedTerm
-		rf.commitIndex = rf.LastIncludedIndex
-		rf.lastApplied = rf.LastIncludedIndex
-		rf.mu.Unlock()
 	}
+	rf.commitIndex = rf.LastIncludedIndex
+	rf.lastApplied = rf.LastIncludedIndex
 }
 
 func (rf* Raft) StartSnapShot(snapShot []byte, index int)  {
@@ -182,9 +167,7 @@ func (rf* Raft) StartSnapShot(snapShot []byte, index int)  {
 	newLog = append(newLog, rf.log[index-rf.LastIncludedIndex:]...)
 	rf.log = newLog
 	rf.LastIncludedIndex = index
-	//info.Printf("rf.me: %v, LastIncludedIndex: %v", rf.me, rf.LastIncludedIndex)
 	rf.LastIncludedTerm = rf.log[index-rf.LastIncludedIndex].Term
-	//info.Println("存储snapshot")
 	rf.persister.SaveStateAndSnapshot(rf.encode(), snapShot)
 }
 
@@ -420,10 +403,6 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // see AppendEntries RPC in figure2
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 
-	/*log.Printf("follower's index :%v, leader's index: %v",
-		rf.me,  args.LeaderId)
-
-	 */
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	// initialize AppendEntriesReply struct
@@ -438,12 +417,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	// reply false if term < currentTerm
 	if args.Term < rf.currentTerm {
-		return
-	}
-
-	//info.Printf("rf.LogLen(): %v, args.prevLogIndex: %v", rf.logLen(), args.PrevLogIndex)
-	if args.PrevLogIndex > rf.logLen()-1 {
-		reply.ConflictIndex = rf.logLen()
 		return
 	}
 
@@ -467,8 +440,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-
-
 	index := args.PrevLogIndex
 	for i:=0; i<len(args.Entries); i++ {
 		index++
@@ -490,10 +461,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.commitIndex = min(args.LeaderCommit, rf.logLen()-1)
 		rf.apply()
 	}
-/*
-	log.Printf("follower's commitIndex: %v,  leader's commitIndex: %v" ,
-		rf.commitIndex, args.LeaderCommit)
- */
 	reply.Success = true
 }
 
@@ -514,7 +481,6 @@ func (rf* Raft) appendLogEntries() {
 				}
 
 				if rf.nextIndex[index] - rf.LastIncludedIndex < 1 {
-					//info.Printf("index: %v, 进入snapshot", index)
 					rf.transmitSnapShot(index)
 					return
 				}
@@ -544,8 +510,6 @@ func (rf* Raft) appendLogEntries() {
 				if reply.Success {
 					rf.matchIndex[index] = args.PrevLogIndex + len(args.Entries)
 					rf.nextIndex[index] = rf.matchIndex[index] + 1
-					//info.Printf("len(arg.Entries) %v", len(args.Entries))
-					//need to understand
 					rf.matchIndex[rf.me] = rf.logLen() - 1
 					copyMatchIndex := make([]int,len(rf.matchIndex))
 					copy(copyMatchIndex,rf.matchIndex)
@@ -673,7 +637,6 @@ func (rf* Raft) sendInstallSnapShot(server int, args *InstallSnapShotArgs, reply
 func (rf *Raft) InstallSnapShot(args* InstallSnapShotArgs, reply* InstallSnapShotReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	defer reset(rf.appendLogEntryCh)
 	reply.Term = rf.currentTerm
 	if args.Term < rf.currentTerm {
 		return
@@ -682,7 +645,7 @@ func (rf *Raft) InstallSnapShot(args* InstallSnapShotArgs, reply* InstallSnapSho
 		rf.toFollower(args.Term)
 	}
 	reply.Term = rf.currentTerm
-
+	reset(rf.appendLogEntryCh)
 	// 5
 	if args.LastIncludedIndex <= rf.LastIncludedIndex {
 		return
@@ -695,14 +658,12 @@ func (rf *Raft) InstallSnapShot(args* InstallSnapShotArgs, reply* InstallSnapSho
 		rf.log = []LogEntry{ {args.LastIncludedTerm, nil}}
 	}
 
-
 	rf.LastIncludedIndex = args.LastIncludedIndex
-	//info.Printf("rf.me: %v, rf.LastIncludedIndex: %v", rf.me, rf.LastIncludedIndex)
 	rf.LastIncludedTerm = args.LastIncludedTerm
 	rf.persister.SaveStateAndSnapshot(rf.encode(), args.Data)
 	rf.commitIndex = max_(rf.commitIndex, rf.LastIncludedIndex)
 	rf.lastApplied = max_(rf.lastApplied, rf.LastIncludedIndex)
-	//if rf.lastApplied > rf.LastIncludedIndex {return}
+	if rf.lastApplied > rf.LastIncludedIndex {return}
 	rf.applyCh <- msg
 }
 
@@ -729,7 +690,7 @@ func (rf* Raft) transmitSnapShot(server int)  {
 
 	rf.matchIndex[server] = rf.LastIncludedIndex
 	rf.nextIndex[server] = rf.LastIncludedIndex + 1
-	//info.Printf("snapshot in arg.PrevlogIndex: %v", rf.LastIncludedIndex)
+
 	rf.matchIndex[rf.me] = rf.logLen() - 1
 	copyMatchIndex := make([]int,len(rf.matchIndex))
 	copy(copyMatchIndex,rf.matchIndex)
@@ -749,7 +710,6 @@ func (rf* Raft) transmitSnapShot(server int)  {
 //
 func (rf *Raft) Kill() {
 	// Your code here, if desired.
-	//info.Println("先kill raft")
 	reset(rf.killCh)
 }
 
@@ -797,7 +757,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		for {
 			select {
 			case <-rf.killCh:
-				//info.Println("kill raft成功")
 				return
 			default :
 			}
@@ -818,7 +777,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 					rf.mu.Unlock()
 				}
 			case Leader:
-				//info.Printf("我是leader,我的信息是：%v", rf.me)
 				time.Sleep(heartbeatTime) // tester doesn't allow the leader send heartbeat RPCs more than ten times per second
 				rf.appendLogEntries()  // leader's task is to append log entry
 			}

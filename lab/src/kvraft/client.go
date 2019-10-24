@@ -1,6 +1,9 @@
 package raftkv
 
-import "labrpc"
+import (
+	"labrpc"
+	"time"
+)
 import "crypto/rand"
 import "math/big"
 
@@ -53,14 +56,15 @@ func (ck *Clerk) Get(key string) string {
 
 	// You will have to modify this function.
 	i := ck.SelectedServer
-	args := GetArgs{
-		Key: key,
-	}
 	for {
+		args := GetArgs{
+			Key: key,
+		}
 		reply := &GetReply{}
 		ok := ck.servers[i].Call("KVServer.Get", &args, &reply)
 		if !ok || reply.WrongLeader {
 			i = (i+1) % len(ck.servers)
+			time.Sleep(time.Duration(100)*time.Millisecond)
 			continue
 		}else {
 			ck.SelectedServer = i
@@ -96,6 +100,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 
 		if !ok || reply.WrongLeader {
 			i = (i+1) % len(ck.servers)
+			time.Sleep(time.Duration(100)*time.Millisecond)
 			continue
 		}else {
 			ck.SelectedServer = i
