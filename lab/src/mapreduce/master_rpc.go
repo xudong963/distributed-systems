@@ -10,9 +10,9 @@ import (
 
 // Shutdown is an RPC method that shuts down the Master's RPC server.
 func (mr *Master) Shutdown(_, _ *struct{}) error {
-	debug("Shutdown: registration server\n")
+	_, _ = debug("Shutdown: registration server\n")
 	close(mr.shutdown)
-	mr.l.Close() // causes the Accept to fail
+	_ = mr.l.Close() // causes the Accept to fail
 	return nil
 }
 
