@@ -4,7 +4,7 @@ import "testing"
 
 func TestSearch(t *testing.T) {
 
-	dict := Dictionary {"test": "this is just a test", "unknown": ""}
+	dict := Dictionary {"test": "this is just a test", "unknown": "", }
 	assertString := func(t *testing.T, got, want error) {
 		t.Helper()
 		if got!=want {

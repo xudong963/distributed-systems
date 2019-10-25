@@ -5,11 +5,14 @@
       <w>ihash</w>
       <w>ioutil</w>
       <w>isleader</w>
+      <w>mapreduce</w>
       <w>maxraftstate</w>
       <w>mrinput</w>
       <w>nrand</w>
+      <w>nreduce</w>
       <w>ntasks</w>
       <w>rpcname</w>
+      <w>rpcs</w>
       <w>unmarshall</w>
     </words>
   </dictionary>

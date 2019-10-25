@@ -1,9 +1,5 @@
 package mapreduce
 
-//
-// Please do not modify this file.
-//
-
 import (
 	"fmt"
 	"net"
@@ -102,6 +98,7 @@ func (mr *Master) forwardRegistrations(ch chan string) {
 
 // Distributed schedules map and reduce tasks on workers that register with the
 // master over RPC.
+// application should normally call Distributed() to start a job
 func Distributed(jobName string, files []string, nreduce int, master string) (mr *Master) {
 	mr = newMaster(master)
 	mr.startRPCServer()

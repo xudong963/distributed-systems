@@ -33,11 +33,11 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	// Your code here (Part III, Part IV).
 	//
 
-	//get Worker.DoTask RPC
 	makeDoTaskArgs := func(task int, phase jobPhase) DoTaskArgs {
 
 		var doTaskArgs DoTaskArgs
 		if phase == mapPhase {
+			// only for map, the input file
 			doTaskArgs.File = mapFiles[task]
 		}
 		doTaskArgs.JobName = jobName
@@ -59,7 +59,7 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	}()
 
 	finish := make(chan int)
-	finishTime := 0
+	finishNum := 0
 
 L:
 	for {
@@ -79,39 +79,12 @@ L:
 				}
 			}()
 		case <- finish:
-			finishTime += 1
+			finishNum += 1
 		default:
-			if finishTime == ntasks {
+			if finishNum == ntasks {
 				break L
 			}
 		}
 	}
-
-
-/*
-  //can't solve the situation of worker fault
-	var wg sync.WaitGroup
-	wg.Add(ntasks)
-	for i := 0; i<ntasks; i++ {
-		go func() {
-			task := <- taskChan
-			worker := <- registerChan
-			//send an PRC to a worker
-			result := call(worker,"Worker.DoTask", makeDoTaskArgs(task, phase), nil)
-			if result {
-				//schedule successfully, put worker to registerChan for other task
-				wg.Done()
-				go func() { registerChan <- worker }()
-			}else {
-				//failure, put task to taskChan, retry
-				taskChan <- task
-				go func() { ntasks++ }()
-			}
-		}()
-	}
-	wg.Wait()
-
- */
-
 	fmt.Printf("Schedule: %v done\n", phase)
 }
