@@ -4,6 +4,7 @@
     <list default="true" id="677f0c9b-4482-4a82-887f-80c6816aee52" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/lab/src/raft/raft.go" beforeDir="false" afterPath="$PROJECT_DIR$/lab/src/raft/raft.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lab/src/raft/util.go" beforeDir="false" afterPath="$PROJECT_DIR$/lab/src/raft/util.go" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
