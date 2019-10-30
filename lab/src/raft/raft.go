@@ -296,9 +296,7 @@ func (rf* Raft) electForLeader() {
 					rf.changeRole("follower")
 					return
 				}
-				if rf.state != "candidate" || rf.currentTerm!= args.Term {
-					return
-				}
+				if rf.state != "candidate" || rf.currentTerm!= args.Term { return }
 				// get vote
 				if reply.VoteGranted {
 					// update vote using atomic
@@ -332,9 +330,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	reply.Term = rf.currentTerm
 
 	// 1
-	if rf.currentTerm > args.Term {
-		return
-	}
+	if rf.currentTerm > args.Term { return }
 	//rf.currentTerm==args.Term
 	// 2
 	if (rf.votedFor==-1 || rf.votedFor==args.CandidateId) &&
@@ -342,7 +338,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			((args.LastLogTerm==rf.getLastLogTerm())&& (args.LastLogIndex>=rf.getLastLogIndex()))) {
 		reply.VoteGranted = true
 		rf.votedFor = args.CandidateId
-		rf.state = "follower"
+		rf.state = "follower"   // rf.state can be follower or candidate
 		rf.persist()
 		// reset election time
 		reset(rf.ch)
@@ -353,7 +349,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
-	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)   // "Raft.AppendEntries" is fixed
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)  
 	return ok
 }
 
