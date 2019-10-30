@@ -95,7 +95,7 @@ type RequestVoteReply struct {
 type AppendEntriesArgs struct {
 	Term int                          // leader's term
 	LeaderId int                      // because in raft only leader can link to client, so follower can redirect client by leader id
-	PrevLogIndex int                  // index of log entry before new ones
+		PrevLogIndex int                  // index of log entry before new ones
 	PrevLogTerm  int                  // term of prevLogIndex entry
 	Entries      []LogEntry           // log entries to store (empty for heartbeat)
 	LeaderCommit int                  // leader already committed log's index
