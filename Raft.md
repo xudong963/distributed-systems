@@ -42,7 +42,7 @@
 
 4. 若候选人获得的投票超过**半数**，则变成领导人
 
-5. **请求投票PRC** ⭐（接收者指接收请求投票PRC的peer）
+5. **请求投票PRC** ⭐（接收者指接收 *请求投票PRC* 的peer）
 
    - 如果**candidate的term小于接收者的currentTerm**， 则不投票，并且返回接收者的currentTerm
 
@@ -71,7 +71,7 @@
 
 ### 日志复制
 
-1. **appendLogEntries**函数的主干，leader针对每一个peer发送**附加日志RPC**，重复这个过程直到它们的日志到达一致
+1. **appendLogEntries**函数的主干，leader针对每一个peer发送**附加日志RPC**
 
    ```go
    for i:=0; i<len(rf.peers); i++ {
@@ -79,15 +79,13 @@
            continue
        }
        go func(index int) {
-           for {
-               reply := &AppendEntriesReply{}
-               respond := rf.sendAppendEntries(index, &args, reply)
-               if reply.Success {
-                   ...
-                   return
-               } else {
-                   ...
-               }
+           reply := &AppendEntriesReply{}
+           respond := rf.sendAppendEntries(index, &args, reply)
+           if reply.Success {
+               ...
+               return
+           } else {
+               ...
            }
        }(i)
    }
@@ -97,4 +95,43 @@
 
 3. 同**领导选举**
 
-4. 
+4. **回复成功**
+
+5. **回复不成功**
+
+6. **附加日志RPC** ⭐
+
+   - reply增加 **ConflictIndex** 和 **ConflictTerm** 用于记录日志冲突index和term
+
+   - 如果**leader的term小于接收者的currentTerm**， 则不投票
+
+     ```go
+     if args.Term < rf.currentTerm { return }
+     ```
+
+   - 如果接收者日志在**prevLogIndex**位置处的日志条目的任期号和**leader的prevLogTerm**不匹配，记录冲突的Term，找到冲突的index。**容易忽略的点：如果leader的prevLogIndex不在接收者日志长度范围内，则令ConflictIndex为接收者日志长度**
+
+     //添加了日志压缩的代码
+
+     ```go
+     if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
+     	if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
+     		reply.ConflictTerm = rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term
+     		//  then search its log for the first index
+     		//  whose entry has term equal to conflictTerm.
+     		for i:=rf.LastIncludedIndex; i<rf.logLen(); i++ {
+     			if rf.log[i-rf.LastIncludedIndex].Term==reply.ConflictTerm {
+     				reply.ConflictIndex = i
+     				break
+     			}
+     		}
+     		return
+     	}
+     }else {
+     	reply.ConflictIndex = rf.logLen()
+     	return
+     }
+     ```
+
+   - 如果已经存在的日志条目和新的产生冲突(**索引值相同但是任期号不同**)，删除这一条和之后所有的。(比较不好理解)
+

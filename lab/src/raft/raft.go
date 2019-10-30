@@ -361,69 +361,66 @@ func (rf* Raft) appendLogEntries() {
 			continue
 		}
 		go func(index int) {
-			for {
-				rf.mu.Lock()
-				if rf.state != "leader" {
-					rf.mu.Unlock()
-					return
-				}
-
-				if rf.nextIndex[index] - rf.LastIncludedIndex < 1 {
-					rf.transmitSnapShot(index)
-					return
-				}
-				args := AppendEntriesArgs{
-					Term:         rf.currentTerm,
-					LeaderId:     rf.me,
-					PrevLogIndex: rf.getPrevLogIndex(index),
-					PrevLogTerm:  rf.getPrevLogTerm(index),
-					Entries:      append(make([]LogEntry, 0), rf.log[rf.nextIndex[index]-rf.LastIncludedIndex:]...),
-					LeaderCommit: rf.commitIndex,
-				}
-				//info.Printf("args.prevlogIndex：%v. rf.me:%v", rf.getPrevLogIndex(index), index)
+			rf.mu.Lock()
+			if rf.state != "leader" {
 				rf.mu.Unlock()
+				return
+			}
 
-				reply := &AppendEntriesReply{}
-				respond := rf.sendAppendEntries(index, &args, reply)
-				rf.mu.Lock()
-				if !respond || rf.state != "leader" || rf.currentTerm != args.Term{
-					rf.mu.Unlock()
-					return
-				}
-				if reply.Term > rf.currentTerm  {
-					rf.currentTerm = reply.Term
-					rf.changeRole("follower")
-					rf.mu.Unlock()
-					return
-				}
-				if reply.Success {
-					rf.matchIndex[index] = args.PrevLogIndex + len(args.Entries)
-					rf.nextIndex[index] = rf.matchIndex[index] + 1
-					rf.matchIndex[rf.me] = rf.logLen() - 1
-					copyMatchIndex := make([]int,len(rf.matchIndex))
-					copy(copyMatchIndex,rf.matchIndex)
-					sort.Sort(sort.Reverse(sort.IntSlice(copyMatchIndex)))
-					N := copyMatchIndex[len(copyMatchIndex)/2]
-					if N > rf.commitIndex && rf.log[N-rf.LastIncludedIndex].Term == rf.currentTerm {
-						rf.commitIndex = N
-						rf.apply()
-					}
-					rf.mu.Unlock()
-					return
-				} else {
+			if rf.nextIndex[index] - rf.LastIncludedIndex < 1 {
+				rf.transmitSnapShot(index)
+				return
+			}
+			args := AppendEntriesArgs{
+				Term:         rf.currentTerm,
+				LeaderId:     rf.me,
+				PrevLogIndex: rf.getPrevLogIndex(index),
+				PrevLogTerm:  rf.getPrevLogTerm(index),
+				Entries:      append(make([]LogEntry, 0), rf.log[rf.nextIndex[index]-rf.LastIncludedIndex:]...),
+				LeaderCommit: rf.commitIndex,
+			}
 
-					rf.nextIndex[index] = reply.ConflictIndex
-					if reply.ConflictTerm != -1 {
-						c := 0
-						for i:=rf.LastIncludedIndex; i<rf.logLen(); i++ {
-							if rf.log[i-rf.LastIncludedIndex].Term == reply.ConflictTerm {
-								c = i
-							}
+			rf.mu.Unlock()
+
+			reply := &AppendEntriesReply{}
+			respond := rf.sendAppendEntries(index, &args, reply)
+			rf.mu.Lock()
+			if !respond || rf.state != "leader" || rf.currentTerm != args.Term{
+				rf.mu.Unlock()
+				return
+			}
+			if reply.Term > rf.currentTerm  {
+				rf.currentTerm = reply.Term
+				rf.changeRole("follower")
+				rf.mu.Unlock()
+				return
+			}
+			if reply.Success {
+				rf.matchIndex[index] = args.PrevLogIndex + len(args.Entries)
+				rf.nextIndex[index] = rf.matchIndex[index] + 1
+				rf.matchIndex[rf.me] = rf.logLen() - 1
+				copyMatchIndex := make([]int,len(rf.matchIndex))
+				copy(copyMatchIndex,rf.matchIndex)
+				sort.Sort(sort.Reverse(sort.IntSlice(copyMatchIndex)))
+				N := copyMatchIndex[len(copyMatchIndex)/2]
+				if N > rf.commitIndex && rf.log[N-rf.LastIncludedIndex].Term == rf.currentTerm {
+					rf.commitIndex = N
+					rf.apply()
+				}
+				rf.mu.Unlock()
+				return
+			} else {
+				rf.nextIndex[index] = reply.ConflictIndex
+				if reply.ConflictTerm != -1 {
+					c := 0
+					for i:=rf.LastIncludedIndex; i<rf.logLen(); i++ {
+						if rf.log[i-rf.LastIncludedIndex].Term == reply.ConflictTerm {
+							c = i
 						}
-						rf.nextIndex[index] = c+1
 					}
-					rf.mu.Unlock()
+					rf.nextIndex[index] = c+1
 				}
+				rf.mu.Unlock()
 			}
 		}(i)
 	}
@@ -447,14 +444,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	reset(rf.ch)
 
 	// reply false if term < currentTerm
-	if args.Term < rf.currentTerm {
-		return
-	}
+	if args.Term < rf.currentTerm { return }
 
 	if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
 
 		if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
-			//reply.ConflictIndex = rf.logLen()  // necessary
 			reply.ConflictTerm = rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term
 			//  then search its log for the first index
 			//  whose entry has term equal to conflictTerm.
@@ -479,7 +473,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			rf.persist()
 			break
 		}
-		//info.Printf("index: %v, LastIncludedIndex: %v, rf.me: %v", index, rf.LastIncludedIndex, rf.me)
 		if rf.log[index-rf.LastIncludedIndex].Term != args.Entries[i].Term {
 			rf.log = rf.log[:index-rf.LastIncludedIndex]
 			rf.log = append(rf.log, args.Entries[i:]...)
