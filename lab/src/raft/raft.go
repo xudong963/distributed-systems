@@ -1,32 +1,17 @@
 package raft
 
-// rf = Make(...)
-//   create a new Raft server.
-// rf.Start(command interface{}) (index, term, isleader)
-//   start agreement on a new log entry
-// rf.GetState() (term, isLeader)
-//   ask a Raft for its current term, and whether it thinks it is leader
-// ApplyMsg
-//   each time a new entry is committed to the log, each Raft peer
-//   should send an ApplyMsg to the service (or tester)
-//   in the same server.
-//
-
 import (
 	"bytes"
-	"log"
-	"os"
+	"labgob"
 	"labrpc"
+	"log"
 	"math/rand"
+	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
-	"labgob"
 )
-// log
-
-
 
 var info *log.Logger
 func init() {
@@ -43,17 +28,7 @@ type LogEntry struct {
 	Command interface{}      //a log contains a series of commands, which its state machine executes in order
 }
 
-//
-// as each Raft peer becomes aware that successive log entries are
-// committed, the peer should send an ApplyMsg to the service (or
-// tester) on the same server, via the applyCh passed to Make(). set
-// CommandValid to true to indicate that the ApplyMsg contains a newly
-// committed log entry.
-//
-// in Lab 3 you'll want to send other kinds of messages (e.g.,
-// snapshots) on the applyCh; at that point you can add fields to
-// ApplyMsg, but set CommandValid to false for these other uses.
-//
+
 type ApplyMsg struct {
 	CommandValid bool
 	Command      interface{}
@@ -68,18 +43,14 @@ const (
 	Candidate
 	Leader
 )
-//
+
 // A Go object implementing a single Raft peer.
-//
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
 
-
-	// Your data here (2A, 2B, 2C).
-	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
 	state     State
 	// persistent state on all servers
@@ -128,17 +99,16 @@ func (rf* Raft)encode() []byte  {
 	return w.Bytes()
 }
 
-//
 // save Raft's persistent state to stable storage,
 // where it can later be retrieved after a crash and restart.
 // see paper's Figure 2 for a description of what should be persistent.
-//
+
 func (rf *Raft) persist() {
 	// Your code here (2C).
 	rf.persister.SaveRaftState(rf.encode())
 }
 
-//
+
 // restore previously persisted state.
 //
 func (rf *Raft) readPersist(data []byte) {
@@ -173,6 +143,7 @@ func (rf* Raft) StartSnapShot(snapShot []byte, index int)  {
 
 
 //to be candidate
+//
 func (rf* Raft) toCandidate() {
 	rf.state = Candidate
 	rf.votedFor = rf.me
@@ -342,34 +313,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 }
 
-//
-// example code to send a RequestVote RPC to a server.
-// server is the index of the target server in rf.peers[].
-// expects RPC arguments in args.
-// fills in *reply with RPC reply, so caller should
-// pass &reply.
-// the types of the args and reply passed to Call() must be
-// the same as the types of the arguments declared in the
-// handler function (including whether they are pointers).
-//
-// The labrpc package simulates a lossy network, in which servers
-// may be unreachable, and in which requests and replies may be lost.
-// Call() sends a request and waits for a reply. If a reply arrives
-// within a timeout interval, Call() returns true; otherwise
-// Call() returns false. Thus Call() may not return for a while.
-// A false return can be caused by a dead server, a live server that
-// can't be reached, a lost request, or a lost reply.
-//
-// Call() is guaranteed to return (perhaps after a delay) *except* if the
-// handler function on the server side does not return.  Thus there
-// is no need to implement your own timeouts around Call().
-//
-// look at the comments in ../labrpc/labrpc.go for more details.
-//
-// if you're having trouble getting RPC to work, check that you've
-// capitalized all field names in structs passed over RPC, and
-// that the caller passes the address of the reply struct with &, not
-// the struct itself.
 //
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
