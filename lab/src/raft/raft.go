@@ -349,76 +349,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
-	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)  
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	return ok
 }
-
-// AppendEntries PRC handler
-// see AppendEntries RPC in figure2
-func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	// initialize AppendEntriesReply struct
-	if rf.currentTerm < args.Term {
-		rf.currentTerm = args.Term
-		rf.changeRole("follower")
-	}
-	reply.Success = false
-	reply.Term = rf.currentTerm
-	reply.ConflictIndex = -1
-	reply.ConflictTerm = -1
-	reset(rf.ch)
-
-	// reply false if term < currentTerm
-	if args.Term < rf.currentTerm {
-		return
-	}
-
-	if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
-
-		if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
-			//reply.ConflictIndex = rf.logLen()  // necessary
-			reply.ConflictTerm = rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term
-			//  then search its log for the first index
-			//  whose entry has term equal to conflictTerm.
-			for i:=rf.LastIncludedIndex; i<rf.logLen(); i++ {
-				if rf.log[i-rf.LastIncludedIndex].Term==reply.ConflictTerm {
-					reply.ConflictIndex = i
-					break
-				}
-			}
-			return
-		}
-	}else {
-		reply.ConflictIndex = rf.logLen()
-		return
-	}
-
-	index := args.PrevLogIndex
-	for i:=0; i<len(args.Entries); i++ {
-		index++
-		if index >= rf.logLen() {
-			rf.log = append(rf.log, args.Entries[i:]...)
-			rf.persist()
-			break
-		}
-		//info.Printf("index: %v, LastIncludedIndex: %v, rf.me: %v", index, rf.LastIncludedIndex, rf.me)
-		if rf.log[index-rf.LastIncludedIndex].Term != args.Entries[i].Term {
-			rf.log = rf.log[:index-rf.LastIncludedIndex]
-			rf.log = append(rf.log, args.Entries[i:]...)
-			rf.persist()
-			break
-		}
-	}
-	// if leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
-	if rf.commitIndex < args.LeaderCommit {
-		rf.commitIndex = min(args.LeaderCommit, rf.logLen()-1)
-		rf.apply()
-	}
-	reply.Success = true
-}
-
 
 //AppendEntries function
 func (rf* Raft) appendLogEntries() {
@@ -494,7 +427,72 @@ func (rf* Raft) appendLogEntries() {
 			}
 		}(i)
 	}
+}
 
+// AppendEntries PRC handler
+// see AppendEntries RPC in figure2
+func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	// initialize AppendEntriesReply struct
+	if rf.currentTerm < args.Term {
+		rf.currentTerm = args.Term
+		rf.changeRole("follower")
+	}
+	reply.Success = false
+	reply.Term = rf.currentTerm
+	reply.ConflictIndex = -1
+	reply.ConflictTerm = -1
+	reset(rf.ch)
+
+	// reply false if term < currentTerm
+	if args.Term < rf.currentTerm {
+		return
+	}
+
+	if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
+
+		if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
+			//reply.ConflictIndex = rf.logLen()  // necessary
+			reply.ConflictTerm = rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term
+			//  then search its log for the first index
+			//  whose entry has term equal to conflictTerm.
+			for i:=rf.LastIncludedIndex; i<rf.logLen(); i++ {
+				if rf.log[i-rf.LastIncludedIndex].Term==reply.ConflictTerm {
+					reply.ConflictIndex = i
+					break
+				}
+			}
+			return
+		}
+	}else {
+		reply.ConflictIndex = rf.logLen()
+		return
+	}
+
+	index := args.PrevLogIndex
+	for i:=0; i<len(args.Entries); i++ {
+		index++
+		if index >= rf.logLen() {
+			rf.log = append(rf.log, args.Entries[i:]...)
+			rf.persist()
+			break
+		}
+		//info.Printf("index: %v, LastIncludedIndex: %v, rf.me: %v", index, rf.LastIncludedIndex, rf.me)
+		if rf.log[index-rf.LastIncludedIndex].Term != args.Entries[i].Term {
+			rf.log = rf.log[:index-rf.LastIncludedIndex]
+			rf.log = append(rf.log, args.Entries[i:]...)
+			rf.persist()
+			break
+		}
+	}
+	// if leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
+	if rf.commitIndex < args.LeaderCommit {
+		rf.commitIndex = min(args.LeaderCommit, rf.logLen()-1)
+		rf.apply()
+	}
+	reply.Success = true
 }
 
 // if commitIndex>lastApplied, then lastApplied+1. and apply

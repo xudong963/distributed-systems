@@ -1,5 +1,7 @@
 ## Raft--易于理解的一致性算法
 
+------
+
 
 
 ### 领导选举
@@ -8,29 +10,39 @@
 
    ```go
    for i:=0; i<len(rf.peers); i++ {
-   		// meet myself
-   		if i==rf.me {
-   			continue
-   		}
-   		go func(index int) {
-   			reply := &RequestVoteReply{}
-   			response := rf.sendRequestVote(index, &args, reply)
-   			if response {
-   				...
-   			}
-   		}(i)
-   	}
+       // meet myself
+       if i==rf.me {
+           continue
+       }
+       go func(index int) {
+           reply := &RequestVoteReply{}
+           response := rf.sendRequestVote(index, &args, reply)
+           if response {
+               ...
+           }
+       }(i)
+   }
    ```
 
-2. 获得响应后，候选人要检查自己的**state** 和 **term** 是否因为发送**RPC**而改变 (**复制日志中同样需要考虑**)
+2. 获得响应后，要将reply的term于candidate的currentTerm进行比较
+
+   ```go
+   if reply.Term > rf.currentTerm {
+   	rf.currentTerm = reply.Term
+   	rf.changeRole("follower")
+   	return
+   }
+   ```
+
+3. 获得响应后，候选人要检查自己的**state** 和 **term** 是否因为发送**RPC**而改变 (**复制日志中同样需要考虑**)
 
    ```go
    if rf.state != "candidate" || rf.currentTerm!= args.Term { return }
    ```
 
-3. 若候选人获得的投票超过**半数**，则变成领导人
+4. 若候选人获得的投票超过**半数**，则变成领导人
 
-4. **请求投票PRC** ⭐（接收者指接收请求投票PRC的peer）
+5. **请求投票PRC** ⭐（接收者指接收请求投票PRC的peer）
 
    - 如果**candidate的term小于接收者的currentTerm**， 则不投票，并且返回接收者的currentTerm
 
@@ -46,15 +58,43 @@
      if (rf.votedFor==-1 || rf.votedFor==args.CandidateId) &&
      		(args.LastLogTerm > rf.getLastLogTerm() ||
      			((args.LastLogTerm==rf.getLastLogTerm())&& (args.LastLogIndex>=rf.getLastLogIndex()))) {
-     		reply.VoteGranted = true
-     		rf.votedFor = args.CandidateId
-     		rf.state = "follower"   // rf.state can be follower or candidate
-     		...
+                 reply.VoteGranted = true
+                 rf.votedFor = args.CandidateId
+                 rf.state = "follower"   // rf.state can be follower or candidate
+                 ...
      }
      ```
+
+------
 
 
 
 ### 日志复制
 
-1. 
+1. **appendLogEntries**函数的主干，leader针对每一个peer发送**附加日志RPC**，重复这个过程直到它们的日志到达一致
+
+   ```go
+   for i:=0; i<len(rf.peers); i++ {
+       if i == rf.me {
+           continue
+       }
+       go func(index int) {
+           for {
+               reply := &AppendEntriesReply{}
+               respond := rf.sendAppendEntries(index, &args, reply)
+               if reply.Success {
+                   ...
+                   return
+               } else {
+                   ...
+               }
+           }
+       }(i)
+   }
+   ```
+
+2. 同**领导选举**
+
+3. 同**领导选举**
+
+4. 
