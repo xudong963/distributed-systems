@@ -105,7 +105,7 @@
 
      - **领导人获得权力**后，初始化所有的nextIndex值为自己的最后一条日志的index+1；如果一个follower的日志跟领导人的不一样，那么在附加日志PRC时的一致性检查就会失败。领导人选举成功后跟随着可能的情况
 
-       ![1572455070974](C:\Users\96399\AppData\Roaming\Typora\typora-user-images\1572455070974.png)
+       <img src="C:\Users\96399\AppData\Roaming\Typora\typora-user-images\1572455070974.png" alt="1572455070974" style="zoom: 50%;" />
 
        
 
