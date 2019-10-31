@@ -2,7 +2,8 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="677f0c9b-4482-4a82-887f-80c6816aee52" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/Raft.md" beforeDir="false" afterPath="$PROJECT_DIR$/Raft.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/dictionaries/96399.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/dictionaries/96399.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -17,6 +18,7 @@
   <component name="ProjectId" id="1S6wzV31zCZJNYbeC075qhaMAoq" />
   <component name="PropertiesComponent">
     <property name="ASKED_SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
+    <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
     <property name="WebServerToolWindowFactoryState" value="false" />
     <property name="go.import.settings.migrated" value="true" />
     <property name="go.sdk.automatically.set" value="true" />
