@@ -120,28 +120,18 @@
 
    - 如果**leader的term小于接收者的currentTerm**， 则不投票
 
-     ```go
-    if args.Term < rf.currentTerm { return }
-     ```
-   
-     
-
    - 接下来就三种情况
-
+  
      1. **follower的日志长度比leader的短**
-
-     2. **follower的日志长度比leader的长，且在prevLogIndex处的term相等**
-
+   2. **follower的日志长度比leader的长，且在prevLogIndex处的term相等**
      3. **follower的日志长度比leader的长，且在prevLogIndex处的term不相等**
-   
-        
-     
+
      ```go
-     if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
+if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
      
-     	if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
+  	if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
      		reply.ConflictTerm = rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term
-     		//  then search its log for the first index
+  		//  then search its log for the first index
      		//  whose entry has term equal to conflictTerm.
      		for i:=rf.LastIncludedIndex; i<rf.logLen(); i++ {
      			if rf.log[i-rf.LastIncludedIndex].Term==reply.ConflictTerm {
@@ -172,6 +162,8 @@
      	}
      }
      ```
+     
+     
      
    - 如果 **leaderCommit > commitIndex**，令 commitIndex等于leaderCommit 和新日志条目索引值中较小的一个
 ------
