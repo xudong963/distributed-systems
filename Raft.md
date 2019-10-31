@@ -123,10 +123,9 @@
    - 接下来就三种情况
   
      1. **follower的日志长度比leader的短**
-   2. **follower的日志长度比leader的长，且在prevLogIndex处的term相等**
+     2. **follower的日志长度比leader的长，且在prevLogIndex处的term相等**
      3. **follower的日志长度比leader的长，且在prevLogIndex处的term不相等**
-
-     ```go
+ ```go
 if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
      
   	if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
