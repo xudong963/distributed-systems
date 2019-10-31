@@ -379,7 +379,7 @@ func (rf* Raft) appendLogEntries() {
 				Entries:      append(make([]LogEntry, 0), rf.log[rf.nextIndex[index]-rf.LastIncludedIndex:]...),
 				LeaderCommit: rf.commitIndex,
 			}
-
+	
 			rf.mu.Unlock()
 
 			reply := &AppendEntriesReply{}

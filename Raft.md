@@ -93,7 +93,12 @@
 
 4. **回复成功**
 
+   - 更新nextIndex, matchIndex
+   - 如果存在一个N满足**N>commitIndex**，并且大多数**matchIndex[i] > N** 成立，并且**log[N].term == currentTerm**，则更新**commitIndex=N**
+
 5. **回复不成功**
+
+   - 更新**nextIndex**，然后重试
 
 6. **附加日志RPC** ⭐
 
@@ -103,20 +108,22 @@
 
      - **entries[]**的含义：准备存储的日志条目；表示心跳时为空
 
+       ```go
+       append(make([]LogEntry, 0), rf.log[rf.nextIndex[index]-rf.LastIncludedIndex:]...)
+       ```
+
      - **领导人获得权力**后，初始化所有的nextIndex值为自己的最后一条日志的index+1；如果一个follower的日志跟领导人的不一样，那么在附加日志PRC时的一致性检查就会失败。领导人选举成功后跟随着可能的情况
 
-       <img src="C:\Users\96399\AppData\Roaming\Typora\typora-user-images\1572455070974.png" alt="1572455070974" style="zoom: 50%;" />
-
-       
+       ![](https://github.com/DreaMer963/distributed-systems/blob/master/pic/appendLog.jpg)
 
    - reply增加 **ConflictIndex** 和 **ConflictTerm** 用于记录日志冲突index和term
 
    - 如果**leader的term小于接收者的currentTerm**， 则不投票
 
      ```go
-     if args.Term < rf.currentTerm { return }
+  if args.Term < rf.currentTerm { return }
      ```
-
+   
    - 接下来就三种情况
 
      1. **follower的日志长度比leader的短**
@@ -126,7 +133,7 @@
      3. **follower的日志长度比leader的长，且在prevLogIndex处的term不相等**
 
      
-     ```go
+  ```go
      if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
      	//不进入下面的if，就是第2种情况
      	if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
@@ -147,7 +154,7 @@
      	reply.ConflictIndex = rf.logLen()
      	return
      }
-     
+     // 针对上述三种情况，在**appendLogEntries**函数中更新nextIndex和Entries后 进行如下日志一致性处理
      // arg.PrevLogIndex是next[i]-1
      index := args.PrevLogIndex
      for i:=0; i<len(args.Entries); i++ {
@@ -159,15 +166,42 @@
      	}
      	if rf.log[index-rf.LastIncludedIndex].Term != args.Entries[i].Term {
      		rf.log = rf.log[:index-rf.LastIncludedIndex]
-     		rf.log = append(rf.log, args.Entries[i:]...)
+     		rf.log = append(rf.log, args.Entries[i:]..)
      		rf.persist()
      		break
      	}
      }
      ```
      
-     
+   - 如果 **leaderCommit > commitIndex**，令 commitIndex等于leaderCommit 和新日志条目索引值中较小的一个
 
-​        
+------
 
-​     
+
+
+### 日志压缩
+
+1. 增量压缩的方法，这个方法每次只对一小部分数据进行操作，这样就分散了压缩的负载压力
+
+2. ![](https://github.com/DreaMer963/distributed-systems/blob/master/pic/log-compact.jpg)
+
+3. **安装快照RPC**
+
+   - 尽管服务器通常都是独立的创建快照，但是领导人必须偶尔的发送快照给一些落后的跟随者
+
+   - 三种情况
+
+     - leader的**LastIncludedIndex**小于等于follower的**LastIncludeIndex**
+     - leader的**LastIncludedIndex**大于follower的**LastIncludeIndex**，leader的**LastIncludedIndex**小于follower日志的最大索引值
+     - leader的**LastIncludedIndex**大于等于follower日志的最大索引值
+
+     **对应的处理方式**
+
+     - 如果接收到的快照是自己日志的前面部分，那么快照包含的条目将全部被删除，但是快照后面的条目仍然有效，要保留
+     - 如果快照中包含没有在接收者日志中存在的信息，那么跟随者丢弃其整个日志，全部被快照取代。
+
+
+
+------
+
+不涉及集群成员变化
