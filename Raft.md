@@ -121,7 +121,7 @@
    - 如果**leader的term小于接收者的currentTerm**， 则不投票
 
      ```go
-  if args.Term < rf.currentTerm { return }
+    if args.Term < rf.currentTerm { return }
      ```
    
    - 接下来就三种情况
@@ -132,12 +132,10 @@
 
      3. **follower的日志长度比leader的长，且在prevLogIndex处的term不相等**
 
-     
-  ```go
+     ```go
      if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
-     	//不进入下面的if，就是第2种情况
+     
      	if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
-              //第3种情况
      		reply.ConflictTerm = rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term
      		//  then search its log for the first index
      		//  whose entry has term equal to conflictTerm.
@@ -150,12 +148,10 @@
      		return
      	}
      }else {
-         // 第1种情况
      	reply.ConflictIndex = rf.logLen()
      	return
      }
-     // 针对上述三种情况，在**appendLogEntries**函数中更新nextIndex和Entries后 进行如下日志一致性处理
-     // arg.PrevLogIndex是next[i]-1
+     
      index := args.PrevLogIndex
      for i:=0; i<len(args.Entries); i++ {
      	index++
@@ -166,7 +162,7 @@
      	}
      	if rf.log[index-rf.LastIncludedIndex].Term != args.Entries[i].Term {
      		rf.log = rf.log[:index-rf.LastIncludedIndex]
-     		rf.log = append(rf.log, args.Entries[i:]..)
+     		rf.log = append(rf.log, args.Entries[i:]...)
      		rf.persist()
      		break
      	}
@@ -174,7 +170,6 @@
      ```
      
    - 如果 **leaderCommit > commitIndex**，令 commitIndex等于leaderCommit 和新日志条目索引值中较小的一个
-
 ------
 
 
