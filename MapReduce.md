@@ -16,5 +16,5 @@
 
 **6**. The master sends a Shutdown RPC to each worker and shuts down its own RPC server.
 
-![structure](https://github.com/DreaMer963/distributed-systems/blob/master/pic/mapreduce.png)
+![structure](/pic/mapreduce.png)
 
