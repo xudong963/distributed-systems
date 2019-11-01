@@ -139,27 +139,27 @@ if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
      			}
      		}
      		return
-     	}
-     }else {
-     	reply.ConflictIndex = rf.logLen()
-     	return
-     }
+    }
+}else {
+    reply.ConflictIndex = rf.logLen()
+    return
+}
      
-     index := args.PrevLogIndex
-     for i:=0; i<len(args.Entries); i++ {
-     	index++
-     	if index >= rf.logLen() {
-     		rf.log = append(rf.log, args.Entries[i:]...)
-     		rf.persist()
-     		break
-     	}
-     	if rf.log[index-rf.LastIncludedIndex].Term != args.Entries[i].Term {
-     		rf.log = rf.log[:index-rf.LastIncludedIndex]
-     		rf.log = append(rf.log, args.Entries[i:]...)
-     		rf.persist()
-     		break
-     	}
-     }
+index := args.PrevLogIndex
+for i:=0; i<len(args.Entries); i++ {
+    index++
+    if index >= rf.logLen() {
+        rf.log = append(rf.log, args.Entries[i:]...)
+        rf.persist()
+        break
+    }
+    if rf.log[index-rf.LastIncludedIndex].Term != args.Entries[i].Term {
+        rf.log = rf.log[:index-rf.LastIncludedIndex]
+        rf.log = append(rf.log, args.Entries[i:]...)
+        rf.persist()
+        break
+    }
+}
  ```
      
      
