@@ -1,0 +1,8 @@
+1. defer
+2. context
+3. recover() 函数 ：Thus the return value from recover reports whether the goroutine is panicking.
+4. defer func() {
+
+   	}()
+
+5. dispatch

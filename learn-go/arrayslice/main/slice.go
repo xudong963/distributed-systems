@@ -10,4 +10,7 @@ func main()  {
 	fmt.Println(slice1)
 	copy(slice2, slice1)
 	fmt.Println(slice2)
+	defer func() {
+
+	}()
 }

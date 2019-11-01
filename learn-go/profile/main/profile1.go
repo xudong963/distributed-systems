@@ -20,6 +20,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	pprof.StartCPUProfile(cpuf)
 	defer pprof.StopCPUProfile()
 
