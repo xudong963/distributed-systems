@@ -1,4 +1,9 @@
-## Raft--易于理解的一致性算法
+---
+title: Raft--易于理解的一致性算法
+date: 2019-11-07T00:00:00+23:00
+---
+
+这篇文章讲解如何用go实现raft算法，代码框架来自于Mit6.824分布式课程
 
 ### 领导选举
 
@@ -125,42 +130,42 @@
      1. **follower的日志长度比leader的短**
      2. **follower的日志长度比leader的长，且在prevLogIndex处的term相等**
      3. **follower的日志长度比leader的长，且在prevLogIndex处的term不相等**
- ```go
-if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
+   ```go
+   if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
      
-  	if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
-     		reply.ConflictTerm = rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term
-  		//  then search its log for the first index
-     		//  whose entry has term equal to conflictTerm.
-     		for i:=rf.LastIncludedIndex; i<rf.logLen(); i++ {
-     			if rf.log[i-rf.LastIncludedIndex].Term==reply.ConflictTerm {
-     				reply.ConflictIndex = i
-     				break
-     			}
-     		}
-     		return
-    }
-}else {
-    reply.ConflictIndex = rf.logLen()
-    return
-}
+  	  if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
+     		  reply.ConflictTerm = rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term
+  		     //  then search its log for the first index
+     		  //  whose entry has term equal to conflictTerm.
+     		  for i:=rf.LastIncludedIndex; i<rf.logLen(); i++ {
+     			  if rf.log[i-rf.LastIncludedIndex].Term==reply.ConflictTerm {
+     				  reply.ConflictIndex = i
+     				  break
+     			  }
+     		  }
+     		  return
+      }
+   }else {
+      reply.ConflictIndex = rf.logLen()
+      return 
+   }
      
-index := args.PrevLogIndex
-for i:=0; i<len(args.Entries); i++ {
-    index++
-    if index >= rf.logLen() {
-        rf.log = append(rf.log, args.Entries[i:]...)
-        rf.persist()
-        break
-    }
-    if rf.log[index-rf.LastIncludedIndex].Term != args.Entries[i].Term {
-        rf.log = rf.log[:index-rf.LastIncludedIndex]
-        rf.log = append(rf.log, args.Entries[i:]...)
-        rf.persist()
-        break
-    }
-}
- ```
+   index := args.PrevLogIndex
+   for i:=0; i<len(args.Entries); i++ {
+      index++
+      if index >= rf.logLen() {
+          rf.log = append(rf.log, args.Entries[i:]...)
+          rf.persist()
+          break
+      }
+      if rf.log[index-rf.LastIncludedIndex].Term != args.Entries[i].Term {
+          rf.log = rf.log[:index-rf.LastIncludedIndex]
+          rf.log = append(rf.log, args.Entries[i:]...)
+          rf.persist()
+          break
+      }
+   }
+   ```
      
      
      
