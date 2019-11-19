@@ -8,14 +8,19 @@ date: 2019-11-07T00:00:00+23:00
 最初，为了学习分布式系统，我了解到了 **Mit 6.824课程**，课程的 lab 需要用 go 来完成。于是 go 走进了我的世界，go 很容易入门， 写起来很舒服，但是要真正的理解 go， 并不是很容易， 特别是对 **goroutine, select, channel** 等的灵活运用。俗话说的好，初生牛犊不怕虎， 在初步了解 go 之后， 我就开始肝课程了。 每个 lab 都会有对应的论文， 比如 mapreduce, raft 等等。 lab2 是**实现 raft** 算法， lab3 是基于 lab2的 raft 算法来 实现一个简单的**分布式 kv 存储**。 在做 lab 的过程中，不仅仅可以对 raft 的细节有更好的把握, 同时对 go 语言的理解也会逐渐加深， 特别是并发部分。
 
 首先看一下**复制状态机**,如下图所示
+
 ![复制状态机](https://github.com/DreaMer963/distributed-systems/blob/master/pic/%E5%A4%8D%E5%88%B6%E7%8A%B6%E6%80%81%E6%9C%BA.png)
+
 复制状态机通常是基于复制日志实现的。每一台服务器存储着一个包含一系列指令的日志，每个日志都按照相同的顺序包含相同的指令，所以每一个服务器都执行相同的指令序列。那么如何保证每台服务器上的日志都相同呢？ 这就是接下来要介绍的一致性算法raft要做的事情了。
 
 raft 主要分三大部分， **领导选举**， **日志复制**， **日志压缩**。 由于其中的细节很多，所以在实现过程中肯定会遇到各种各样的问题， 这也是一个比较好的事情，因为问题将促使我们不断地深入的去阅读论文， 同时锻炼 debug 并发程序的能力。最后肯定是满满的收获。
 
 实现主要依赖于raft论文中的下图
+
 ![](https://github.com/DreaMer963/distributed-systems/blob/master/pic/%E5%9B%BE%E4%BA%8C.png)
+
 代码框架条理清楚。包含七个主要的 **struct** , 三个 **RPC handler** , 四个**主干函数** , 如下
+
 ```go
 
 // 七个struct
@@ -108,7 +113,7 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 ------
 
-**1**. **electForLeader**函数主干，候选人针对每一个peer发送**请求投票RPC**
+**1**. **electForLeader** 函数主干，候选人针对每一个 peer 发送**请求投票RPC**
 
    ```go
    for i:=0; i<len(rf.peers); i++ {
@@ -126,7 +131,7 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
    }
    ```
 
-**2**. 获得响应后，要将reply的term于candidate的currentTerm进行比较
+**2**. 获得响应后，要将 reply 的 term 于 candidate 的 currentTerm 进行比较
 
    ```go
    if reply.Term > rf.currentTerm {
@@ -144,9 +149,9 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 **4**. 若候选人获得的投票超过**半数**，则变成领导人
 
-**5**. **请求投票PRC** ⭐（接收者指接收 *请求投票PRC* 的peer）
+**5**. **请求投票PRC** ⭐(接收者指接收 *请求投票PRC* 的 peer)
 
-- 如果**candidate的term小于接收者的currentTerm**， 则不投票，并且返回接收者的currentTerm
+- 如果 **candidate 的 term 小于接收者的 currentTerm**， 则不投票，并且返回接收者的 currentTerm
 
      ```go
      reply.VoteGranted = false
@@ -154,7 +159,7 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
      if rf.currentTerm > args.Term { return }
      ```
 
-- 如果**接收者的votedFor为空或者为candidateId，并且candidate的日志至少和接收者一样新**，那么就投票给候选人。candidate的日志至少和接收者一样新的含义：**candidate的最后一个日志条目的term大于接收者的最后一个日志条目的term或者当二者相等时，candidate的最后一个日志条目的index要大于等于接收者的**
+- 如果**接收者的 votedFor 为空或者为 candidateId，并且 candidate 的日志至少和接收者一样新**，那么就投票给候选人。candidate 的日志至少和接收者一样新的含义：**candidate 的最后一个日志条目的 term 大于接收者的最后一个日志条目的 term 或者当二者相等时，candidate 的最后一个日志条目的 index 要大于等于接收者的**
 
      ```go
      if (rf.votedFor==-1 || rf.votedFor==args.CandidateId) &&
@@ -171,7 +176,7 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 #### 日志复制
 
-**1**. **appendLogEntries** 函数的主干，leader针对每一个peer发送**附加日志RPC**
+**1**. **appendLogEntries** 函数的主干，leader 针对每一个 peer 发送**附加日志RPC**
 
    ```go
    for i:=0; i<len(rf.peers); i++ {
@@ -197,18 +202,18 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 **4**. **回复成功**
 
-- 更新nextIndex, matchIndex
-- 如果存在一个N满足**N>commitIndex**，并且大多数**matchIndex[i] > N** 成立，并且**log[N].term == currentTerm**，则更新**commitIndex=N**
+- 更新 nextIndex, matchIndex
+- 如果存在一个N满足 **N>commitIndex**，并且大多数 **matchIndex[i] > N** 成立，并且 **log[N].term == currentTerm**，则更新 **commitIndex=N**
 
 **5**. **回复不成功**
 
-- 更新**nextIndex**，然后重试
+- 更新 **nextIndex**，然后重试
 
 **6**. **附加日志RPC** ⭐
 
 - 几个再次明确的地方：
 
-- **preLogIndex**的含义：新的日志条目(s)紧随之前的索引值，是针对每一个follower而言的==nextIndex[i]-1，每一轮重试都会改变。
+- **preLogIndex** 的含义：新的日志条目(s)紧随之前的索引值，是针对每一个follower而言的==nextIndex[i]-1，每一轮重试都会改变。
 
 - **entries[]** 的含义：准备存储的日志条目；表示心跳时为空
 
@@ -216,19 +221,19 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
     append(make([]LogEntry, 0), rf.log[rf.nextIndex[index]-rf.LastIncludedIndex:]...)
     ```
 
-- **领导人获得权力**后，初始化所有的nextIndex值为自己的最后一条日志的index+1；如果一个follower的日志跟领导人的不一样，那么在附加日志PRC时的一致性检查就会失败。领导人选举成功后跟随着可能的情况
+- **领导人获得权力**后，初始化所有的 nextIndex 值为自己的最后一条日志的 index+1；如果一个 follower 的日志跟领导人的不一样，那么在附加日志PRC时的一致性检查就会失败。领导人选举成功后跟随着可能的情况
 
 ![](https://github.com/DreaMer963/distributed-systems/blob/master/pic/appendLog.jpg)
 
 - reply增加 **ConflictIndex** 和 **ConflictTerm** 用于记录日志冲突index和term
 
-- 如果**leader的term小于接收者的currentTerm**， 则不投票
+- 如果 **leader 的 term 小于接收者的 currentTerm**， 则不投票
 
 - 接下来就三种情况
 
-    1. **follower的日志长度比leader的短**
-    2. **follower的日志长度比leader的长，且在prevLogIndex处的term相等**
-    3. **follower的日志长度比leader的长，且在prevLogIndex处的term不相等**
+    1. **follower 的日志长度比 leader 的短**
+    2. **follower 的日志长度比 leader 的长，且在 prevLogIndex 处的 term 相等**
+    3. **follower 的日志长度比 leader 的长，且在 prevLogIndex 处的 term 不相等**
     ```go
     if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
 		if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
@@ -265,7 +270,7 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 	}
     ```
 
-- 如果 **leaderCommit > commitIndex**，令 commitIndex等于leaderCommit 和新日志条目索引值中较小的一个
+- 如果 **leaderCommit > commitIndex**，令 commitIndex 等于 leaderCommit  和新日志条目索引值中较小的一个
 
 ------
 
