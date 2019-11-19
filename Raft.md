@@ -202,7 +202,7 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 **4**. **回复成功**
 
-- 更新 nextIndex, matchIndex
+- 更新 **nextIndex**, 即 leader 需要发送给该 peer 下一条日志条目的索引值 , 更新 **matchIndex**, 即 leader 已经复制给该 peer 的日志的最高索引值
 - 如果存在一个N满足 **N>commitIndex**，并且大多数 **matchIndex[i] > N** 成立，并且 **log[N].term == currentTerm**，则更新 **commitIndex=N**
 
 **5**. **回复不成功**
