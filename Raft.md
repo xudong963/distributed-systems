@@ -107,7 +107,7 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 ```
 
-下面的部分， 记录了三大部分的主干框架和我认为的容易出错的地方。 在你实现的过程中，如果真的 debug 不出错在哪里，可以看看我下面提到的一些要点。
+下面的部分, 记录了三大部分的主干和我认为的容易出错的地方。
 
 ### 领导选举
 
@@ -135,13 +135,13 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
    ```go
    if reply.Term > rf.currentTerm {
-   	rf.currentTerm = reply.Term
-   	rf.changeRole("follower")
-   	return
+       rf.currentTerm = reply.Term
+       rf.changeRole("follower")
+       return
    }
    ```
 
-**3**. 获得响应后，候选人要检查自己的 **state** 和 **term** 是否因为发送**RPC**而改变 
+**3**. 获得响应后，候选人要检查自己的 **state** 和 **term** 是否因为发送**RPC**而改变
 
    ```go
    if rf.state != "candidate" || rf.currentTerm!= args.Term { return }
@@ -159,7 +159,7 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
      if rf.currentTerm > args.Term { return }
      ```
 
-- 如果**接收者的 votedFor 为空或者为 candidateId，并且 candidate 的日志至少和接收者一样新**，那么就投票给候选人。candidate 的日志至少和接收者一样新的含义：**candidate 的最后一个日志条目的 term 大于接收者的最后一个日志条目的 term 或者当二者相等时，candidate 的最后一个日志条目的 index 要大于等于接收者的**
+- 如果**接收者的 votedFor 为空或者为 candidateId，并且 candidate 的日志至少和接收者一样新**，那么就投票给候选人。candidate 的日志至少和接收者**一样新**的含义：**candidate 的最后一个日志条目的 term 大于接收者的最后一个日志条目的 term 或者当二者相等时，candidate 的最后一个日志条目的 index 要大于等于接收者的**
 
      ```go
      if (rf.votedFor==-1 || rf.votedFor==args.CandidateId) &&
@@ -176,7 +176,7 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 ### 日志复制
 
-**1**. **appendLogEntries** 函数的主干，leader 针对每一个 peer 发送**附加日志RPC**
+**1**. **appendLogEntries** 函数的主干，leader 针对每一个 peer 发送**附加日志 RPC**
 
    ```go
    for i:=0; i<len(rf.peers); i++ {
@@ -203,7 +203,13 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 **4**. **回复成功**
 
 - 更新 **nextIndex**, 即 leader 需要发送给该 peer 下一条日志条目的索引值 , 更新 **matchIndex**, 即 leader 已经复制给该 peer 的日志的最高索引值
-- 如果存在一个N满足 **N>commitIndex**，并且大多数 **matchIndex[i] > N** 成立，并且 **log[N].term == currentTerm**，则更新 **commitIndex=N**
+
+    ```go
+    rf.matchIndex[index] = args.PrevLogIndex + len(args.Entries)
+    rf.nextIndex[index] = rf.matchIndex[index] + 1
+    ```
+
+- 如果存在一个 N 满足 **N>commitIndex**，并且大多数 **matchIndex[i] > N** 成立，并且 **log[N].term == currentTerm**，则更新 **commitIndex=N**
 
 **5**. **回复不成功**
 
@@ -221,19 +227,19 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
     append(make([]LogEntry, 0), rf.log[rf.nextIndex[index]-rf.LastIncludedIndex:]...)
     ```
 
-- **领导人获得权力**后，初始化所有的 nextIndex 值为自己的最后一条日志的 index+1；如果一个 follower 的日志跟领导人的不一样，那么在附加日志PRC时的一致性检查就会失败。领导人选举成功后跟随者可能的情况
+- **领导人获得权力**后，初始化所有的 nextIndex 值为自己的最后一条日志的 index+1；如果一个 follower 的日志跟领导人的不一样，那么在附加日志 PRC 时的一致性检查就会失败。领导人选举成功后跟随者可能的情况
 
 ![](https://github.com/DreaMer963/distributed-systems/blob/master/pic/appendLog.jpg)
 
-- reply增加 **ConflictIndex** 和 **ConflictTerm** 用于记录日志冲突index和term
+- reply增加 **ConflictIndex** 和 **ConflictTerm** 用于记录日志冲突 index 和 term
 
-- 如果 **leader 的 term 小于接收者的 currentTerm**， 则不投票
+- 如果 **leader 的 term 小于接收者的 currentTerm**， 则 reply false.
 
-- 接下来就三种情况
+- **接下来就三种情况** ⭐(比较绕且容易出错)
 
-    1. **follower 的日志长度比 leader 的短**
-    2. **follower 的日志长度比 leader 的长，且在 prevLogIndex 处的 term 相等**
-    3. **follower 的日志长度比 leader 的长，且在 prevLogIndex 处的 term 不相等**
+    1. **follower 的日志长度比 leader 的短**, 那么 **ConflictIndex** 就是 follower 的 日志长度。之后在 **appendLogEntries** 函数里面会更新 **nextIndex** 为 ConflictIndex, 相应的 **prevLogIndex** 也会改变, 于是在下一轮RPC中便可以比较 follower 的日志条目在 **arg.PrevLogIndex** 索引处的 **Term** 是否等于 **args.PrevLogTerm**, 如果相等, 则该可以把 leader 在 **arg.PrevLogIndex** 后面的一次性全部添加到 follower 的日志条目上, 从而达成一致性, 否则令 **ConflictTerm** 为 follower 的日志条目在 **arg.PrevLogIndex** 索引处的 **Term**, 然后从头遍历 follower 的日志条目, 找到**第一个 term 等于 ConflictTerm 的 索引**, 用来更新 **ConflictIndex**
+    2. **follower 的日志长度比 leader 的长，且在 prevLogIndex 处的 term 相等**, 则开始依次对比 follower 在 **arg.prevLogIndex** 后的日志条目在何处跟 **entries** 上相应的日志的 **term** 不一致, 假设该索引为 **idx**, 那么 follower 在索引后的日志条目应该被替换为 **entries** 在 该索引后的日志条目, 最终达成一致性
+    3. **follower 的日志长度比 leader 的长，且在 prevLogIndex 处的 term 不相等**, 之后便是去寻找 **ConflictTerm** 然后更新 **ConflictIndex**,  直到在 prevLogIndex 处的 term 相等, 然后按照 **2** 进行处理.
     ```go
     if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
 		if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
