@@ -109,7 +109,7 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 下面的部分， 记录了三大部分的主干框架和我认为的容易出错的地方。 在你实现的过程中，如果真的 debug 不出错在哪里，可以看看我下面提到的一些要点。
 
-#### 领导选举
+### 领导选举
 
 ------
 
@@ -174,7 +174,7 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 ------
 
-#### 日志复制
+### 日志复制
 
 **1**. **appendLogEntries** 函数的主干，leader 针对每一个 peer 发送**附加日志RPC**
 
@@ -213,15 +213,15 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 - 几个再次明确的地方：
 
-- **preLogIndex** 的含义：新的日志条目(s)紧随之前的索引值，是针对每一个follower而言的==nextIndex[i]-1，每一轮重试都会改变。
+  - **preLogIndex** 的含义：新的日志条目(s)紧随之前的索引值，是针对每一个follower而言的==nextIndex[i]-1，每一轮重试都会改变。
 
-- **entries[]** 的含义：准备存储的日志条目；表示心跳时为空
+  - **entries[]** 的含义：准备存储的日志条目；表示心跳时为空
 
     ```go
     append(make([]LogEntry, 0), rf.log[rf.nextIndex[index]-rf.LastIncludedIndex:]...)
     ```
 
-- **领导人获得权力**后，初始化所有的 nextIndex 值为自己的最后一条日志的 index+1；如果一个 follower 的日志跟领导人的不一样，那么在附加日志PRC时的一致性检查就会失败。领导人选举成功后跟随着可能的情况
+- **领导人获得权力**后，初始化所有的 nextIndex 值为自己的最后一条日志的 index+1；如果一个 follower 的日志跟领导人的不一样，那么在附加日志PRC时的一致性检查就会失败。领导人选举成功后跟随者可能的情况
 
 ![](https://github.com/DreaMer963/distributed-systems/blob/master/pic/appendLog.jpg)
 
@@ -275,7 +275,7 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 ------
 
 
-#### 日志压缩
+### 日志压缩
 
 **1**. 增量压缩的方法，这个方法每次只对一小部分数据进行操作，这样就分散了压缩的负载压力
 
