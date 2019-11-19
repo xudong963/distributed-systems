@@ -5,6 +5,106 @@ date: 2019-11-07T00:00:00+23:00
 
 这篇文章讲解如何用go实现raft算法，代码框架来自于Mit6.824分布式课程
 
+最初，为了学习分布式系统，我了解到了 **Mit 6.824课程**，课程的 lab 需要用 go 来完成。于是 go 走进了我的世界，go 很容易入门， 写起来很舒服，但是要真正的理解 go， 并不是很容易， 特别是对 **goroutine, select, channel** 等的灵活运用。俗话说的好，初生牛犊不怕虎， 在初步了解 go 之后， 我就开始肝课程了。 每个 lab 都会有对应的论文， 比如 mapreduce, raft 等等。 lab2 是**实现 raft** 算法， lab3 是基于 lab2的 raft 算法来 实现一个简单的**分布式 kv 存储**。 在做 lab 的过程中，不仅仅可以对 raft 的细节有更好的把握, 同时对 go 语言的理解也会逐渐加深， 特别是并发部分。
+
+首先看一下**复制状态机**,如下图所示
+![复制状态机](https://github.com/DreaMer963/distributed-systems/blob/master/pic/%E5%A4%8D%E5%88%B6%E7%8A%B6%E6%80%81%E6%9C%BA.png)
+复制状态机通常是基于复制日志实现的。每一台服务器存储着一个包含一系列指令的日志，每个日志都按照相同的顺序包含相同的指令，所以每一个服务器都执行相同的指令序列。那么如何保证每台服务器上的日志都相同呢？ 这就是接下来要介绍的一致性算法raft要做的事情了。
+
+raft 主要分三大部分， **领导选举**， **日志复制**， **日志压缩**。 由于其中的细节很多，所以在实现过程中肯定会遇到各种各样的问题， 这也是一个比较好的事情，因为问题将促使我们不断地深入的去阅读论文， 同时锻炼 debug 并发程序的能力。最后肯定是满满的收获。
+
+实现主要依赖于raft论文中的下图
+![](https://github.com/DreaMer963/distributed-systems/blob/master/pic/%E5%9B%BE%E4%BA%8C.png)
+代码框架条理清楚。包含七个主要的 **struct** , 三个 **RPC handler** , 四个**主干函数** , 如下
+```go
+
+// 七个struct
+type Raft struct {
+    ...
+}
+
+type RequestVoteArgs struct {
+    ...
+}
+
+type RequestVoteReply struct {
+    ...
+}
+
+type AppendEntriesArgs struct {
+    ...
+}
+
+type AppendEntriesReply struct {
+    ...
+}
+
+type InstallSnapShotArgs struct {
+    ...
+}
+
+type InstallSnapShotReply struct {
+    ...
+}
+
+// 三个 RPC handler
+
+// RequestVote RPC handler
+func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+    ...
+}
+
+// AppendEntries RPC handler
+func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+    ...
+}
+
+// InstallSnapShot RPC handler
+func (rf *Raft) InstallSnapShot(args* InstallSnapShotArgs, reply* InstallSnapShotReply) {
+    ...
+}
+
+// 四个主干函数
+func (rf* Raft) electForLeader() {
+    ...
+}
+
+func (rf* Raft) appendLogEntries() {
+    ...
+}
+
+func (rf* Raft) transmitSnapShot(server int)  {
+    ...
+}
+
+// 包含一个后台 goroutine. 
+func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan ApplyMsg) *Raft {
+        ...
+        go func() {
+            for {
+                electionTimeout := time.Duration(rand.Intn(200) + 300) * time.Millisecond
+                switch state {
+                case "follower", "candidate":
+                    // if receive rpc, then break select, reset election tim
+                    select {
+                    case <-rf.ch:
+                    case <-time.After(electionTimeout):
+                    //become Candidate if time out
+                        rf.changeRole("candidate")
+                    }
+                case "leader":
+                    time.Sleep(heartbeatTime) 
+                    rf.appendLogEntries()
+                }
+            }
+        }()
+}
+
+```
+
+下面的部分， 记录了三大部分的主干框架和我认为的容易出错的地方。 在你实现的过程中，如果真的 debug 不出错在哪里，可以看看我下面提到的一些要点。
+
+
 ### 领导选举
 
 ------
@@ -128,13 +228,15 @@ date: 2019-11-07T00:00:00+23:00
    - 如果**leader的term小于接收者的currentTerm**， 则不投票
 
    - 接下来就三种情况
-  
+    
      1. **follower的日志长度比leader的短**
      2. **follower的日志长度比leader的长，且在prevLogIndex处的term相等**
      3. **follower的日志长度比leader的长，且在prevLogIndex处的term不相等**
    ```go
    if args.PrevLogIndex >=rf.LastIncludedIndex && args.PrevLogIndex < rf.logLen() {
      
+   ```
+
   	  if args.PrevLogTerm != rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term {
      		  reply.ConflictTerm = rf.log[args.PrevLogIndex-rf.LastIncludedIndex].Term
   		     //  then search its log for the first index
@@ -202,3 +304,5 @@ date: 2019-11-07T00:00:00+23:00
 ------
 
 不涉及集群成员变化
+
+   ```
