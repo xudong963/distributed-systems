@@ -283,9 +283,11 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 ### 日志压缩
 
-**1**. 增量压缩的方法，这个方法每次只对一小部分数据进行操作，这样就分散了压缩的负载压力
+**1**. 采用日志压缩，不仅可以减少本地占用的空间和每次重置的时间花销, 还可以直接通过网络把快照发给那些落后的跟随者，使他们更新到最新的状态
 
-**2**. ![](https://github.com/DreaMer963/distributed-systems/blob/master/pic/log-compact.jpg)
+**2**. 下图为 Raft 中快照的基本思想, 快照中包含**状态机的状态, LastIncludeIndex: 被快照取代的最后的条目在日志中的索引值, LastIncludedTerm: 该条目的任期号**,保留这些数据是为了支持快照后紧接着的第一个条目的附加日志请求时的一致性检查
+
+![](https://github.com/DreaMer963/distributed-systems/blob/master/pic/log-compact.jpg)
 
 **3**. **安装快照RPC**
 
@@ -293,8 +295,8 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
 
 - 三种情况
 
-    - leader 的 **LastIncludedIndex** 小于等于follower的 **LastIncludeIndex**
-    - leader的 **LastIncludedIndex** 大于follower的 **LastIncludeIndex**，leader 的 **LastIncludedIndex** 小于 follower 日志的最大索引值
+    - leader 的 **LastIncludedIndex** 小于等于 follower 的  **LastIncludeIndex**
+    - leader 的 **LastIncludedIndex** 大于 follower 的 **LastIncludeIndex**，leader 的 **LastIncludedIndex** 小于 follower 日志的最大索引值
     - leader 的 **LastIncludedIndex** 大于等于 follower 日志的最大索引值
 
     **对应的处理方式**
