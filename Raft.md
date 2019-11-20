@@ -303,3 +303,10 @@ func Make(peers []*labrpc.ClientEnd, me int, persister *Persister, applyCh chan 
     - 如果接收到的快照是自己日志的前面部分，那么快照包含的条目将全部被删除，但是快照后面的条目仍然有效，要保留
     - 如果快照中包含没有在接收者日志中存在的信息，那么跟随者丢弃其整个日志，全部被快照取代。
 
+------
+
+### 总结
+
+**1**. 个人认为看一两遍论文就掌握 raft 还是比较困难的, 所以当对 raft 有了大致了解之后, 就可以开始实现了, 遇到问题后带着问题去读, 反复咀嚼, 逐渐加深对 raft 的理解
+
+**2**. 推荐看一下这个: [raft 可视化](http://thesecretlivesofdata.com/raft/), 可以对 raft 有一个直观的感受
