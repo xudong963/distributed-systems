@@ -18,3 +18,5 @@
 
 ![结构图](https://github.com/DreaMer963/distributed-systems/blob/master/pic/mapreduce.png)
 
+[??????????](http://www.lucienxian.top/2019/02/27/MapReduce-MIT6-824/)
+
